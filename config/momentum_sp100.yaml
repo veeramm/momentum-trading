@@ -1,0 +1,19 @@
+# config/momentum_sp100.yaml
+data:
+  sources:
+    tiingo:
+      enabled: true
+      api_key: "${TIINGO_API_KEY}"
+      rate_limit: 600
+      cache:
+        enabled: true
+        backend: "redis"  # Use Redis for larger datasets
+        ttl: 86400  # Cache for 24 hours
+
+strategies:
+  sp100_momentum:
+    enabled: true
+    lookback_period: 252
+    top_n: 20  # Select top 20 stocks
+    rebalance_frequency: "monthly"
+    min_volume: 5000000  # $5M daily volume

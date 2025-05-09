@@ -1,0 +1,256 @@
+# Momentum Trading Application Configuration
+
+app:
+  name: "Momentum Trading System"
+  version: "1.0.0"
+  environment: "${ENVIRONMENT:development}"
+  debug: true
+
+data:
+  # Data sources configuration
+  sources:
+    tiingo:
+      enabled: true
+      api_key: "${TIINGO_API_KEY}"
+      rate_limit: 600  # requests per hour
+      use_iex: false  # Use IEX feed for real-time data
+      base_url: "https://api.tiingo.com"
+      
+    yfinance:
+      enabled: false
+      rate_limit: 2000  # requests per hour
+      
+    alphavantage:
+      enabled: false
+      api_key: "${ALPHAVANTAGE_API_KEY}"
+      rate_limit: 5  # requests per minute
+      
+    polygon:
+      enabled: false
+      api_key: "${POLYGON_API_KEY}"
+      rate_limit: 100  # requests per minute
+  
+  # Data storage configuration
+  storage:
+    type: "sqlite"  # sqlite, postgresql, mongodb
+    connection_string: "sqlite:///data/momentum_trading.db"
+    
+  # Cache configuration
+  cache:
+    enabled: true
+    backend: "memory"  # memory, redis
+    ttl: 3600  # seconds
+    redis:
+      host: "localhost"
+      port: 6379
+      db: 0
+
+# Trading configuration
+trading:
+  # Universe of assets to trade
+  universe:
+    # US Equities
+    equities:
+      - "SPY"  # S&P 500
+      - "QQQ"  # NASDAQ 100
+      - "IWM"  # Russell 2000
+      - "VTI"  # Total Market
+      - "EFA"  # International Developed
+      - "EEM"  # Emerging Markets
+    
+    # Safe assets
+    bonds:
+      - "BIL"  # Short-term Treasury
+      - "IEF"  # 7-10 Year Treasury
+      - "TLT"  # 20+ Year Treasury
+  
+  # Trading parameters
+  timeframes:
+    primary: "1d"
+    secondary: ["1h", "4h"]
+  
+  # Risk management
+  risk:
+    max_position_pct: 0.10  # Max 10% per position
+    max_sector_exposure: 0.30  # Max 30% per sector
+    max_correlation: 0.70  # Max correlation between positions
+    stop_loss_pct: 0.05  # 5% stop loss
+    trailing_stop_pct: 0.10  # 10% trailing stop
+    max_drawdown: 0.15  # 15% max drawdown
+    
+  # Position sizing
+  position_sizing:
+    method: "risk_parity"  # equal_weight, risk_parity, kelly
+    volatility_target: 0.10  # 10% annual volatility
+    lookback_period: 252  # Trading days for volatility calc
+    
+  # Rebalancing
+  rebalancing:
+    frequency: "monthly"  # daily, weekly, monthly
+    threshold: 0.05  # 5% deviation threshold
+    
+# Strategy configuration
+strategies:
+  # Classic momentum strategy
+  classic_momentum:
+    enabled: true
+    lookback_period: 252  # 12 months
+    holding_period: 21  # 1 month
+    top_n: 10  # Top 10 assets
+    rebalance_frequency: "monthly"
+    filter_volatility: true
+    min_volume: 1000000  # $1M daily volume
+    
+  # Dual momentum strategy
+  dual_momentum:
+    enabled: true
+    absolute_lookback: 252  # 12 months
+    relative_lookback: 126  # 6 months
+    safety_asset: "BIL"
+    risk_on_threshold: 0.0  # Positive returns required
+    
+  # Adaptive momentum strategy
+  adaptive_momentum:
+    enabled: true
+    min_lookback: 63  # 3 months
+    max_lookback: 252  # 12 months
+    regime_detection: true
+    volatility_scaling: true
+    correlation_filter: true
+
+# Execution configuration
+execution:
+  # Broker configuration
+  broker:
+    type: "paper"  # paper, alpaca, interactive_brokers
+    paper_trading:
+      initial_capital: 100000
+      commission: 0.001  # 0.1%
+      slippage: 0.001  # 0.1%
+    
+    alpaca:
+      api_key: "${ALPACA_API_KEY}"
+      secret_key: "${ALPACA_SECRET_KEY}"
+      base_url: "https://paper-api.alpaca.markets"
+      
+  # Order management
+  orders:
+    default_type: "market"  # market, limit
+    limit_offset_pct: 0.001  # 0.1% from mid price
+    time_in_force: "day"  # day, gtc, ioc
+    
+  # Execution algorithms
+  algorithms:
+    vwap:
+      enabled: true
+      participation_rate: 0.05  # 5% of volume
+      
+    twap:
+      enabled: true
+      duration: 3600  # seconds
+
+# Monitoring configuration
+monitoring:
+  # Performance tracking
+  performance:
+    benchmark: "SPY"
+    metrics:
+      - "total_return"
+      - "annualized_return"
+      - "sharpe_ratio"
+      - "sortino_ratio"
+      - "max_drawdown"
+      - "calmar_ratio"
+    
+  # Alert system
+  alerts:
+    enabled: true
+    channels:
+      email:
+        enabled: false
+        smtp_server: "${SMTP_SERVER}"
+        smtp_port: 587
+        username: "${EMAIL_USERNAME}"
+        password: "${EMAIL_PASSWORD}"
+        recipients:
+          - "alerts@example.com"
+      
+      slack:
+        enabled: false
+        webhook_url: "${SLACK_WEBHOOK_URL}"
+        channel: "#trading-alerts"
+        
+      telegram:
+        enabled: false
+        bot_token: "${TELEGRAM_BOT_TOKEN}"
+        chat_id: "${TELEGRAM_CHAT_ID}"
+    
+    triggers:
+      - type: "drawdown"
+        threshold: 0.10  # 10% drawdown
+      - type: "correlation_spike"
+        threshold: 0.80  # 80% correlation
+      - type: "volatility_spike"
+        threshold: 2.0  # 2x normal volatility
+      - type: "position_limit"
+        threshold: 0.15  # 15% position size
+  
+  # Dashboard configuration
+  dashboard:
+    enabled: true
+    host: "0.0.0.0"
+    port: 8080
+    refresh_interval: 60  # seconds
+    auth:
+      enabled: false
+      username: "${DASHBOARD_USERNAME:admin}"
+      password: "${DASHBOARD_PASSWORD:admin}"
+
+# Logging configuration
+logging:
+  level: "INFO"
+  format: "json"  # text, json
+  outputs:
+    console:
+      enabled: true
+      level: "INFO"
+    
+    file:
+      enabled: true
+      level: "DEBUG"
+      path: "logs/momentum_trading.log"
+      rotation: "1 day"
+      retention: "30 days"
+    
+    syslog:
+      enabled: false
+      host: "localhost"
+      port: 514
+
+# Backtesting configuration
+backtesting:
+  start_date: "2020-01-01"
+  end_date: "2023-12-31"
+  initial_capital: 100000
+  commission: 0.001  # 0.1%
+  slippage: 0.001  # 0.1%
+  
+  # Monte Carlo simulation
+  monte_carlo:
+    enabled: true
+    simulations: 1000
+    confidence_level: 0.95
+  
+  # Walk-forward analysis
+  walk_forward:
+    enabled: true
+    train_period: 252  # 1 year
+    test_period: 63  # 3 months
+    step_size: 21  # 1 month
+
+# Development configuration
+development:
+  hot_reload: true
+  debug_mode: true
+  profiling: false
+  test_mode: false
