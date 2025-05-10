@@ -130,43 +130,48 @@ async def run_enhanced_momentum_analysis(timeframe='intermediate', universe='def
     
     logger.info(f"Successfully fetched data for {len(market_data)} symbols")
     
-    # Enhance with Tiingo fundamental and sentiment data
-    await strategy.enhance_with_tiingo_data(list(market_data.keys()))
-    
-    # Get comprehensive analysis
-    analyses = strategy.get_analysis_for_reporting(market_data)
-    
-    # Create report data with enhanced metrics
-    report_data = []
-    for rank, analysis in enumerate(analyses, 1):
-        indicators = analysis['indicators']
+    try:
+        # Enhance with Tiingo fundamental and sentiment data
+        await strategy.enhance_with_tiingo_data(list(market_data.keys()))
         
-        report_data.append({
-            'Rank': rank,
-            'Symbol': analysis['symbol'],
-            'Timeframe': timeframe.replace('_', ' ').title(),
-            'Action': analysis['action'],
-            'Comprehensive Score': f"{analysis['comprehensive_score']:.3f}",
-            'Technical Score': f"{analysis['technical_score']:.3f}",
-            'Fundamental Score': f"{analysis['fundamental_score']:.3f}",
-            'Sentiment Score': f"{analysis['sentiment_score']:.3f}",
-            'Buy Criteria Met': 'Yes' if analysis['buy_criteria_met'] else 'No',
-            'Current Price': f"${indicators['close']:.2f}",
-            '1M Return': f"{indicators.get('return_1m', 0):.1%}",
-            '3M Return': f"{indicators.get('return_3m', 0):.1%}",
-            'RSI': f"{indicators['rsi']:.1f}",
-            'Volume Ratio': f"{indicators['volume_ratio']:.1f}x",
-            'MACD': 'Bullish' if indicators['macd'] > indicators['macd_signal'] else 'Bearish',
-            'Above MA20': 'Yes' if indicators['close'] > indicators['ma_20'] else 'No',
-            'Above MA50': 'Yes' if indicators['close'] > indicators['ma_50'] else 'No',
-            'Above MA200': 'Yes' if indicators['close'] > indicators['ma_200'] else 'No',
-            '52W High %': f"{indicators.get('pct_from_52w_high', 0):.1%}",
-            'ADX': f"{indicators.get('adx', 0):.1f}",
-            'MA Convergence': f"{(indicators['ma_20'] - indicators['ma_50']) / indicators['ma_50'] * 100:.1f}%",
-            'Volume Trend': f"{indicators.get('volume_ratio', 1.0):.2f}x"
-        })
-    
-    return report_data
+        # Get comprehensive analysis
+        analyses = strategy.get_analysis_for_reporting(market_data)
+        
+        # Create report data with enhanced metrics
+        report_data = []
+        for rank, analysis in enumerate(analyses, 1):
+            indicators = analysis['indicators']
+            
+            report_data.append({
+                'Rank': rank,
+                'Symbol': analysis['symbol'],
+                'Timeframe': timeframe.replace('_', ' ').title(),
+                'Action': analysis['action'],
+                'Comprehensive Score': f"{analysis['comprehensive_score']:.3f}",
+                'Technical Score': f"{analysis['technical_score']:.3f}",
+                'Fundamental Score': f"{analysis['fundamental_score']:.3f}",
+                'Sentiment Score': f"{analysis['sentiment_score']:.3f}",
+                'Buy Criteria Met': 'Yes' if analysis['buy_criteria_met'] else 'No',
+                'Current Price': f"${indicators['close']:.2f}",
+                '1M Return': f"{indicators.get('return_1m', 0):.1%}",
+                '3M Return': f"{indicators.get('return_3m', 0):.1%}",
+                'RSI': f"{indicators['rsi']:.1f}",
+                'Volume Ratio': f"{indicators['volume_ratio']:.1f}x",
+                'MACD': 'Bullish' if indicators['macd'] > indicators['macd_signal'] else 'Bearish',
+                'Above MA20': 'Yes' if indicators['close'] > indicators['ma_20'] else 'No',
+                'Above MA50': 'Yes' if indicators['close'] > indicators['ma_50'] else 'No',
+                'Above MA200': 'Yes' if indicators['close'] > indicators['ma_200'] else 'No',
+                '52W High %': f"{indicators.get('pct_from_52w_high', 0):.1%}",
+                'ADX': f"{indicators.get('adx', 0):.1f}",
+                'MA Convergence': f"{(indicators['ma_20'] - indicators['ma_50']) / indicators['ma_50'] * 100:.1f}%",
+                'Volume Trend': f"{indicators.get('volume_ratio', 1.0):.2f}x"
+            })
+        
+        return report_data
+        
+    finally:
+        # Ensure Tiingo fetcher session is closed
+        await tiingo_fetcher.close()
 
 
 async def run_combined_analysis(universe='default'):

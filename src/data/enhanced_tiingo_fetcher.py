@@ -104,16 +104,18 @@ class EnhancedTiingoDataFetcher:
         symbols: Optional[List[str]] = None,
         start_date: Optional[Union[str, datetime]] = None,
         end_date: Optional[Union[str, datetime]] = None,
-        limit: int = 100
+        limit: int = 100,
+        retry_count: int = 0
     ) -> List[Dict]:
         """
-        Fetch news data from Tiingo.
+        Fetch news data from Tiingo with retry logic.
         
         Args:
             symbols: List of symbols to get news for
             start_date: Start date for news
             end_date: End date for news
             limit: Maximum number of news items
+            retry_count: Current retry attempt
             
         Returns:
             List of news articles with sentiment data
@@ -149,11 +151,24 @@ class EnhancedTiingoDataFetcher:
                 if response.status == 200:
                     data = await response.json()
                     return data
+                elif response.status in [502, 503, 504] and retry_count < self.max_retries:
+                    # Retry for server errors
+                    logger.warning(f"Server error {response.status}, retrying in {self.retry_delay} seconds...")
+                    await asyncio.sleep(self.retry_delay * (retry_count + 1))
+                    return await self.fetch_news(symbols, start_date, end_date, limit, retry_count + 1)
                 else:
                     error_msg = await response.text()
                     logger.error(f"Error fetching news: {response.status} - {error_msg}")
                     return []
                     
+        except asyncio.TimeoutError:
+            if retry_count < self.max_retries:
+                logger.warning(f"Request timeout, retrying in {self.retry_delay} seconds...")
+                await asyncio.sleep(self.retry_delay * (retry_count + 1))
+                return await self.fetch_news(symbols, start_date, end_date, limit, retry_count + 1)
+            else:
+                logger.error("Timeout error after all retries")
+                return []
         except Exception as e:
             logger.error(f"Error fetching news data: {e}")
             return []
