@@ -117,7 +117,53 @@ class EnhancedAdvancedMomentumStrategy(BaseStrategy):
                     )
         
         return sentiment_scores
+   
+    def calculate_comprehensive_score(self, symbol: str, market_data: pd.DataFrame) -> Dict:
+        """
+        Calculate comprehensive score using technical, fundamental, and sentiment data.
+        """
+        # Calculate technical indicators
+        indicators = self.calculate_indicators(market_data)
+        technical_score = self._calculate_technical_score(indicators)
     
+        # Calculate fundamental score
+        fundamental_score = self._calculate_fundamental_score(symbol)
+    
+        # Calculate sentiment score
+        sentiment_score = self._calculate_sentiment_score(symbol)
+    
+        # Check if fundamental data is available
+        has_fundamentals = (symbol in self.fundamental_cache and 
+                           'error' not in self.fundamental_cache[symbol])
+    
+        # Adjust weights based on data availability
+        if has_fundamentals:
+            # Use configured weights
+            tech_weight = self.technical_weight
+            fund_weight = self.fundamental_weight
+            sent_weight = self.sentiment_weight
+        else:
+            # Redistribute fundamental weight to technical and sentiment
+            tech_weight = self.technical_weight + (self.fundamental_weight * 0.7)
+            fund_weight = 0
+            sent_weight = self.sentiment_weight + (self.fundamental_weight * 0.3)
+        
+            # Normalize weights
+            total_weight = tech_weight + fund_weight + sent_weight
+            tech_weight /= total_weight
+            sent_weight /= total_weight
+    
+        # Weighted comprehensive score
+        comprehensive_score = (
+            technical_score * tech_weight +
+            fundamental_score * fund_weight +
+            sentiment_score * sent_weight
+        )
+    
+    # ... rest of the method remains the same
+
+
+ 
     def calculate_comprehensive_score(self, symbol: str, market_data: pd.DataFrame) -> Dict:
         """
         Calculate comprehensive score using technical, fundamental, and sentiment data.
@@ -221,67 +267,28 @@ class EnhancedAdvancedMomentumStrategy(BaseStrategy):
             score += 10
         
         return score / max_score
-    
+   
     def _calculate_fundamental_score(self, symbol: str) -> float:
         """
         Calculate fundamental score using Tiingo data.
-        
+    
         Args:
             symbol: Stock symbol
-            
+        
         Returns:
             Fundamental score (0-1)
         """
         if symbol not in self.fundamental_cache:
             return 0.5  # Neutral score if no data
-        
+    
         fundamentals = self.fundamental_cache[symbol]
-        score = 0.0
-        components = 0
-        
-        # Extract key metrics
-        metrics = fundamentals.get('daily_metrics', {})
-        if metrics:
-            latest_metrics = metrics[-1] if isinstance(metrics, list) else metrics
-            
-            # Revenue growth
-            rev_growth = latest_metrics.get('revenueGrowth', 0)
-            if rev_growth > 0.1:  # 10% growth
-                score += 1
-                components += 1
-            elif rev_growth > 0:
-                score += 0.5
-                components += 1
-            
-            # Earnings growth
-            eps_growth = latest_metrics.get('epsGrowth', 0)
-            if eps_growth > 0.15:  # 15% growth
-                score += 1
-                components += 1
-            elif eps_growth > 0:
-                score += 0.5
-                components += 1
-            
-            # Profit margins
-            profit_margin = latest_metrics.get('profitMargin', 0)
-            if profit_margin > 0.15:  # 15% margin
-                score += 1
-                components += 1
-            elif profit_margin > 0.10:
-                score += 0.5
-                components += 1
-            
-            # Return on equity
-            roe = latest_metrics.get('returnOnEquity', 0)
-            if roe > 0.20:  # 20% ROE
-                score += 1
-                components += 1
-            elif roe > 0.15:
-                score += 0.5
-                components += 1
-        
-        # Normalize score
-        return score / components if components > 0 else 0.5
+    
+        # Check if we have an error (e.g., DOW 30 limitation)
+        if 'error' in fundamentals:
+            return 0.5  # Return neutral score for unavailable data
+    
+    # ... rest of the method remains the same
+
     
     def _calculate_sentiment_score(self, symbol: str) -> float:
         """
@@ -477,3 +484,32 @@ class EnhancedAdvancedMomentumStrategy(BaseStrategy):
         analyses.sort(key=lambda x: x['comprehensive_score'], reverse=True)
         
         return analyses
+
+    def calculate_momentum_scores(self, data: pd.DataFrame) -> pd.Series:
+        """
+        Calculate momentum scores for assets.
+        Required implementation of abstract method from BaseStrategy.
+    
+        Args:
+            data: DataFrame with price data
+        
+        Returns:
+            Series with momentum scores
+        """
+        # This is called by the base class for single asset scoring
+        # We'll use our comprehensive scoring approach
+    
+        # Handle duplicate columns
+        close_data = data['close']
+        if isinstance(close_data, pd.DataFrame):
+            close_data = close_data.iloc[:, 0]
+    
+        if len(close_data) < self.lookback_period:
+            return pd.Series([np.nan])
+    
+        # For single asset analysis, we'll return technical score
+        # The full comprehensive score requires symbol information for fundamental/sentiment
+        indicators = self.calculate_indicators(data)
+        technical_score = self._calculate_technical_score(indicators)
+    
+        return pd.Series([technical_score])

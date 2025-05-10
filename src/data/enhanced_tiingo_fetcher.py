@@ -351,3 +351,46 @@ class EnhancedTiingoDataFetcher:
                 logger.error(f"Error fetching real-time quote for {symbol}: {e}")
         
         return results
+
+    async def fetch_fundamental_data(self, symbols: List[str]) -> Dict[str, Dict]:
+        """
+        Fetch fundamental data for symbols.
+    
+        Args:
+            symbols: List of symbols
+        
+        Returns:
+            Dictionary of fundamental data by symbol
+        """
+        results = {}
+    
+        for symbol in symbols:
+            try:
+               # Fetch company meta data
+               meta_endpoint = f"/tiingo/daily/{symbol}"
+               meta_data = await self._make_request(meta_endpoint)
+            
+               # Fetch fundamental statements
+               statements_endpoint = f"/tiingo/fundamentals/{symbol}/statements"
+               statements = await self._make_request(statements_endpoint)
+            
+               # Fetch daily fundamental metrics
+               metrics_endpoint = f"/tiingo/fundamentals/{symbol}/daily"
+               daily_metrics = await self._make_request(metrics_endpoint)
+            
+               results[symbol] = {
+                   'meta': meta_data,
+                   'statements': statements,
+                   'daily_metrics': daily_metrics
+               }
+            
+            except Exception as e:
+               # Check if it's a DOW 30 limitation error
+               if "DOW 30" in str(e):
+                   logger.warning(f"Fundamental data not available for {symbol} (DOW 30 limitation)")
+                   results[symbol] = {'error': 'DOW_30_LIMITATION'}
+               else:
+                   logger.error(f"Error fetching fundamentals for {symbol}: {e}")
+                   results[symbol] = {'error': str(e)}
+    
+        return results
