@@ -1,4 +1,9 @@
-# Add these imports at the top
+"""
+Enhanced Tiingo Data Fetcher
+
+This module provides enhanced Tiingo data fetching with parallel processing,
+Dow 30 filtering, and comprehensive data retrieval.
+"""
 
 import asyncio
 from datetime import datetime, timedelta
@@ -12,15 +17,50 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 class EnhancedTiingoDataFetcher:
+    """
+    Enhanced Tiingo data fetcher with parallel processing and advanced features.
+    """
+    
     def __init__(self, config: dict):
-        # ... existing initialization code ...
+        """
+        Initialize the enhanced Tiingo data fetcher.
+        
+        Args:
+            config: Configuration dictionary
+        """
+        self.config = config
+        self.api_key = config.get('api_key')
+        if not self.api_key:
+            raise ValueError("Tiingo API key required")
+        
+        # Load configuration parameters
+        self.base_url = config.get('base_url', 'https://api.tiingo.com')
+        self.use_iex = config.get('use_iex', False)
+        self.rate_limit = config.get('rate_limit', 600)
+        self.rate_limit_window = config.get('rate_limit_window', 3600)
+        
+        # Parallel processing settings
+        self.batch_size = config.get('batch_size', 50)
+        self.max_concurrent_requests = config.get('max_concurrent_requests', 10)
+        self.max_workers = config.get('max_workers', 10)
+        
+        # Network settings
+        self.timeout = config.get('timeout', 30)
+        self.max_retries = config.get('max_retries', 3)
+        self.retry_delay = config.get('retry_delay', 2)
         
         # Load Dow 30 symbols
         self.dow30_symbols = self._load_dow30_symbols()
         logger.info(f"Loaded {len(self.dow30_symbols)} Dow 30 symbols")
         
-        # Parallel processing settings
-        self.max_workers = config.get('max_workers', 10)
+        # Initialize session
+        self.session = None
+        
+        # Initialize rate limiter
+        self._rate_limiter = AsyncRateLimiter(
+            max_calls=self.rate_limit,
+            time_window=self.rate_limit_window
+        )
     
     def _load_dow30_symbols(self) -> set:
         """Load Dow 30 symbols from file."""
@@ -42,6 +82,81 @@ class EnhancedTiingoDataFetcher:
     def _is_dow30(self, symbol: str) -> bool:
         """Check if symbol is in Dow 30."""
         return symbol.upper() in self.dow30_symbols
+    
+    async def _get_session(self) -> aiohttp.ClientSession:
+        """Get or create aiohttp session."""
+        if self.session is None or self.session.closed:
+            timeout = aiohttp.ClientTimeout(total=self.timeout)
+            headers = {
+                'Content-Type': 'application/json',
+                'Authorization': f'Token {self.api_key}'
+            }
+            self.session = aiohttp.ClientSession(timeout=timeout, headers=headers)
+        return self.session
+    
+    async def close(self):
+        """Close the aiohttp session."""
+        if self.session and not self.session.closed:
+            await self.session.close()
+    
+    async def fetch_news(
+        self,
+        symbols: Optional[List[str]] = None,
+        start_date: Optional[Union[str, datetime]] = None,
+        end_date: Optional[Union[str, datetime]] = None,
+        limit: int = 100
+    ) -> List[Dict]:
+        """
+        Fetch news data from Tiingo.
+        
+        Args:
+            symbols: List of symbols to get news for
+            start_date: Start date for news
+            end_date: End date for news
+            limit: Maximum number of news items
+            
+        Returns:
+            List of news articles with sentiment data
+        """
+        session = await self._get_session()
+        
+        # Build URL
+        url = f"{self.base_url}/tiingo/news"
+        
+        # Build parameters
+        params = {
+            'token': self.api_key,
+            'limit': limit
+        }
+        
+        if symbols:
+            params['tickers'] = ','.join(symbols)
+        
+        if start_date:
+            if isinstance(start_date, datetime):
+                start_date = start_date.strftime('%Y-%m-%d')
+            params['startDate'] = start_date
+        
+        if end_date:
+            if isinstance(end_date, datetime):
+                end_date = end_date.strftime('%Y-%m-%d')
+            params['endDate'] = end_date
+        
+        try:
+            await self._rate_limiter.acquire()
+            
+            async with session.get(url, params=params) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    return data
+                else:
+                    error_msg = await response.text()
+                    logger.error(f"Error fetching news: {response.status} - {error_msg}")
+                    return []
+                    
+        except Exception as e:
+            logger.error(f"Error fetching news data: {e}")
+            return []
     
     async def fetch_fundamental_data(
         self, 
@@ -128,31 +243,74 @@ class EnhancedTiingoDataFetcher:
         logger.info(f"Completed fundamental data fetch for {len(results)} symbols")
         return results
     
-    async def _fetch_fundamental_batch(self, symbols: List[str]) -> Dict[str, Dict]:
+    async def _fetch_fundamental_single(self, symbol: str) -> Dict:
         """
-        Fetch fundamentals for a batch of symbols using parallel processing.
+        Fetch fundamental data for a single symbol.
         
         Args:
-            symbols: List of symbols in batch
+            symbol: Stock symbol
             
         Returns:
-            Dictionary of results
+            Dictionary of fundamental data
         """
-        semaphore = asyncio.Semaphore(self.max_concurrent_requests)
+        session = await self._get_session()
         
-        async def fetch_with_semaphore(symbol):
-            async with semaphore:
-                return symbol, await self._fetch_fundamental_single(symbol)
+        # URLs for different fundamental endpoints
+        urls = {
+            'meta': f"{self.base_url}/tiingo/fundamentals/{symbol}/meta",
+            'statements': f"{self.base_url}/tiingo/fundamentals/{symbol}/statements",
+            'daily': f"{self.base_url}/tiingo/fundamentals/{symbol}/daily"
+        }
         
-        tasks = [fetch_with_semaphore(symbol) for symbol in symbols]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        fundamental_data = {
+            'symbol': symbol,
+            'has_fundamentals': False
+        }
         
-        batch_results = {}
-        for result in results:
-            if isinstance(result, Exception):
-                logger.error(f"Error in batch processing: {result}")
-            else:
-                symbol, data = result
-                batch_results[symbol] = data
+        try:
+            for data_type, url in urls.items():
+                await self._rate_limiter.acquire()
+                
+                async with session.get(url) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        fundamental_data[data_type] = data
+                        fundamental_data['has_fundamentals'] = True
+                    else:
+                        logger.debug(f"No {data_type} data for {symbol}: {response.status}")
+                        fundamental_data[data_type] = {}
+            
+            return fundamental_data
+            
+        except Exception as e:
+            logger.error(f"Error fetching fundamentals for {symbol}: {e}")
+            return {'error': str(e), 'has_fundamentals': False}
+
+
+class AsyncRateLimiter:
+    """Async rate limiter for API calls."""
+    
+    def __init__(self, max_calls: int, time_window: int = 60):
+        self.max_calls = max_calls
+        self.time_window = time_window  # seconds
+        self.calls = []
+        self.lock = asyncio.Lock()
         
-        return batch_results
+    async def acquire(self):
+        """Wait if necessary to respect rate limit."""
+        async with self.lock:
+            now = datetime.now()
+            
+            # Remove old calls outside the window
+            cutoff_time = now - timedelta(seconds=self.time_window)
+            self.calls = [call_time for call_time in self.calls 
+                         if call_time > cutoff_time]
+            
+            # If at limit, wait
+            if len(self.calls) >= self.max_calls:
+                sleep_time = (self.calls[0] + timedelta(seconds=self.time_window) - now).total_seconds()
+                if sleep_time > 0:
+                    await asyncio.sleep(sleep_time)
+                    
+            # Add current call
+            self.calls.append(now)
