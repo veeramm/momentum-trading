@@ -1,0 +1,31 @@
+symbol,name,exchange,industry,date_added
+MMM,3M,NYSE,Conglomerate,1976-08-09
+AXP,American Express,NYSE,Financial services,1982-08-30
+AMGN,Amgen,NASDAQ,Biopharmaceutical,2020-08-31
+AMZN,Amazon,NASDAQ,Retailing,2024-02-26
+AAPL,Apple,NASDAQ,Information technology,2015-03-19
+BA,Boeing,NYSE,Aerospace and defense,1987-03-12
+CAT,Caterpillar,NYSE,Construction and mining,1991-05-06
+CVX,Chevron,NYSE,Petroleum industry,2008-02-19
+CSCO,Cisco,NASDAQ,Information technology,2009-06-08
+KO,Coca-Cola,NYSE,Drink industry,1987-03-12
+DIS,Disney,NYSE,Broadcasting and entertainment,1991-05-06
+GS,Goldman Sachs,NYSE,Financial services,2013-09-23
+HD,Home Depot,NYSE,Home Improvement,1999-11-01
+HON,Honeywell,NASDAQ,Conglomerate,2020-08-31
+IBM,IBM,NYSE,Information technology,1979-06-29
+JNJ,Johnson & Johnson,NYSE,Pharmaceutical industry,1997-03-17
+JPM,JPMorgan Chase,NYSE,Financial services,1991-05-06
+MCD,McDonald's,NYSE,Food industry,1985-10-30
+MRK,Merck,NYSE,Pharmaceutical industry,1979-06-29
+MSFT,Microsoft,NASDAQ,Information technology,1999-11-01
+NKE,Nike,NYSE,Clothing industry,2013-09-23
+NVDA,Nvidia,NASDAQ,Information technology,2024-11-08
+PG,Procter & Gamble,NYSE,Fast-moving consumer goods,1932-05-26
+CRM,Salesforce,NYSE,Information technology,2020-08-31
+SHW,Sherwin-Williams,NYSE,Specialty chemicals,2024-11-08
+TRV,Travelers,NYSE,Insurance,2009-06-08
+UNH,UnitedHealth Group,NYSE,Managed health care,2012-09-24
+VZ,Verizon,NYSE,Telecommunications industry,2004-04-08
+V,Visa,NYSE,Financial services,2013-09-23
+WMT,Walmart,NYSE,Retailing,1997-03-17

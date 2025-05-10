@@ -1,0 +1,216 @@
+{
+  "companies": [
+    {
+      "symbol": "MMM",
+      "name": "3M",
+      "exchange": "NYSE",
+      "industry": "Conglomerate",
+      "date_added": "1976-08-09"
+    },
+    {
+      "symbol": "AXP",
+      "name": "American Express",
+      "exchange": "NYSE",
+      "industry": "Financial services",
+      "date_added": "1982-08-30"
+    },
+    {
+      "symbol": "AMGN",
+      "name": "Amgen",
+      "exchange": "NASDAQ",
+      "industry": "Biopharmaceutical",
+      "date_added": "2020-08-31"
+    },
+    {
+      "symbol": "AMZN",
+      "name": "Amazon",
+      "exchange": "NASDAQ",
+      "industry": "Retailing",
+      "date_added": "2024-02-26"
+    },
+    {
+      "symbol": "AAPL",
+      "name": "Apple",
+      "exchange": "NASDAQ",
+      "industry": "Information technology",
+      "date_added": "2015-03-19"
+    },
+    {
+      "symbol": "BA",
+      "name": "Boeing",
+      "exchange": "NYSE",
+      "industry": "Aerospace and defense",
+      "date_added": "1987-03-12"
+    },
+    {
+      "symbol": "CAT",
+      "name": "Caterpillar",
+      "exchange": "NYSE",
+      "industry": "Construction and mining",
+      "date_added": "1991-05-06"
+    },
+    {
+      "symbol": "CVX",
+      "name": "Chevron",
+      "exchange": "NYSE",
+      "industry": "Petroleum industry",
+      "date_added": "2008-02-19"
+    },
+    {
+      "symbol": "CSCO",
+      "name": "Cisco",
+      "exchange": "NASDAQ",
+      "industry": "Information technology",
+      "date_added": "2009-06-08"
+    },
+    {
+      "symbol": "KO",
+      "name": "Coca-Cola",
+      "exchange": "NYSE",
+      "industry": "Drink industry",
+      "date_added": "1987-03-12"
+    },
+    {
+      "symbol": "DIS",
+      "name": "Disney",
+      "exchange": "NYSE",
+      "industry": "Broadcasting and entertainment",
+      "date_added": "1991-05-06"
+    },
+    {
+      "symbol": "GS",
+      "name": "Goldman Sachs",
+      "exchange": "NYSE",
+      "industry": "Financial services",
+      "date_added": "2013-09-23"
+    },
+    {
+      "symbol": "HD",
+      "name": "Home Depot",
+      "exchange": "NYSE",
+      "industry": "Home Improvement",
+      "date_added": "1999-11-01"
+    },
+    {
+      "symbol": "HON",
+      "name": "Honeywell",
+      "exchange": "NASDAQ",
+      "industry": "Conglomerate",
+      "date_added": "2020-08-31"
+    },
+    {
+      "symbol": "IBM",
+      "name": "IBM",
+      "exchange": "NYSE",
+      "industry": "Information technology",
+      "date_added": "1979-06-29"
+    },
+    {
+      "symbol": "JNJ",
+      "name": "Johnson & Johnson",
+      "exchange": "NYSE",
+      "industry": "Pharmaceutical industry",
+      "date_added": "1997-03-17"
+    },
+    {
+      "symbol": "JPM",
+      "name": "JPMorgan Chase",
+      "exchange": "NYSE",
+      "industry": "Financial services",
+      "date_added": "1991-05-06"
+    },
+    {
+      "symbol": "MCD",
+      "name": "McDonald's",
+      "exchange": "NYSE",
+      "industry": "Food industry",
+      "date_added": "1985-10-30"
+    },
+    {
+      "symbol": "MRK",
+      "name": "Merck",
+      "exchange": "NYSE",
+      "industry": "Pharmaceutical industry",
+      "date_added": "1979-06-29"
+    },
+    {
+      "symbol": "MSFT",
+      "name": "Microsoft",
+      "exchange": "NASDAQ",
+      "industry": "Information technology",
+      "date_added": "1999-11-01"
+    },
+    {
+      "symbol": "NKE",
+      "name": "Nike",
+      "exchange": "NYSE",
+      "industry": "Clothing industry",
+      "date_added": "2013-09-23"
+    },
+    {
+      "symbol": "NVDA",
+      "name": "Nvidia",
+      "exchange": "NASDAQ",
+      "industry": "Information technology",
+      "date_added": "2024-11-08"
+    },
+    {
+      "symbol": "PG",
+      "name": "Procter & Gamble",
+      "exchange": "NYSE",
+      "industry": "Fast-moving consumer goods",
+      "date_added": "1932-05-26"
+    },
+    {
+      "symbol": "CRM",
+      "name": "Salesforce",
+      "exchange": "NYSE",
+      "industry": "Information technology",
+      "date_added": "2020-08-31"
+    },
+    {
+      "symbol": "SHW",
+      "name": "Sherwin-Williams",
+      "exchange": "NYSE",
+      "industry": "Specialty chemicals",
+      "date_added": "2024-11-08"
+    },
+    {
+      "symbol": "TRV",
+      "name": "Travelers",
+      "exchange": "NYSE",
+      "industry": "Insurance",
+      "date_added": "2009-06-08"
+    },
+    {
+      "symbol": "UNH",
+      "name": "UnitedHealth Group",
+      "exchange": "NYSE",
+      "industry": "Managed health care",
+      "date_added": "2012-09-24"
+    },
+    {
+      "symbol": "VZ",
+      "name": "Verizon",
+      "exchange": "NYSE",
+      "industry": "Telecommunications industry",
+      "date_added": "2004-04-08"
+    },
+    {
+      "symbol": "V",
+      "name": "Visa",
+      "exchange": "NYSE",
+      "industry": "Financial services",
+      "date_added": "2013-09-23"
+    },
+    {
+      "symbol": "WMT",
+      "name": "Walmart",
+      "exchange": "NYSE",
+      "industry": "Retailing",
+      "date_added": "1997-03-17"
+    }
+  ],
+  "count": 30,
+  "updated": "2025-05-10T00:08:14.227747"
+}

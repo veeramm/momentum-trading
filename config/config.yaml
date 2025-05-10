@@ -15,6 +15,18 @@ data:
       rate_limit: 600  # requests per hour
       use_iex: false  # Use IEX feed for real-time data
       base_url: "https://api.tiingo.com"
+
+      # Batch processing settings
+      batch_size: 50  # Number of symbols per batch
+      max_concurrent_requests: 10  # Maximum concurrent API requests
+      max_workers: 10  # Maximum worker threads
+      
+      # Network settings
+      timeout: 30  # Request timeout in seconds
+      max_retries: 3  # Maximum retry attempts
+      retry_delay: 2  # Base delay between retries (exponential backoff)
+
+
       
     yfinance:
       enabled: false

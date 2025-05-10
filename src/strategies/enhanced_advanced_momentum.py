@@ -66,14 +66,18 @@ class EnhancedAdvancedMomentumStrategy(BaseStrategy):
             logger.warning("No Tiingo fetcher configured, skipping advanced data")
             return
             
-        # Fetch fundamental data with progress
+        # Check for Dow 30 symbols
+        dow30_count = sum(1 for s in symbols if self.tiingo_fetcher._is_dow30(s))
+        logger.info(f"Found {dow30_count} Dow 30 symbols out of {len(symbols)} total")
+    
+        # Fetch fundamental data (automatically filtered to Dow 30)
         try:
-            logger.info("Fetching fundamental data...")
+            logger.info("Fetching fundamental data for Dow 30 companies...")
             fundamentals = await self.tiingo_fetcher.fetch_fundamental_data(symbols, show_progress=True)
             self.fundamental_cache.update(fundamentals)
         except Exception as e:
             logger.error(f"Error fetching fundamental data: {e}")
-        
+
         # Fetch recent news and sentiment
         try:
             logger.info("Fetching news and sentiment data...")
