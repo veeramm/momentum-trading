@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 """
-Run Enhanced Advanced Momentum Strategy
+Run Enhanced Advanced Momentum Strategy with Sector Analysis Export
 
-This script runs the enhanced advanced momentum strategy with integrated
-technical, fundamental, and sentiment analysis using optimized data fetching.
+This script runs the enhanced advanced momentum strategy and exports
+sector analysis to a separate CSV file.
 """
 
 import asyncio
@@ -174,9 +174,32 @@ async def run_enhanced_momentum_analysis(timeframe='intermediate', universe='def
         await tiingo_fetcher.close()
 
 
+def load_sector_mapping():
+    """Load sector mapping from company data files."""
+    project_root = Path(__file__).parent.parent
+    sector_mapping = {}
+    
+    # Try to load from S&P 500 companies file first
+    sp500_file = project_root / 'data' / 'universe' / 'sp500_companies.csv'
+    if sp500_file.exists():
+        sp500_df = pd.read_csv(sp500_file)
+        for _, row in sp500_df.iterrows():
+            sector_mapping[row['symbol']] = row['sector']
+    
+    # Also load from Dow 30 companies file
+    dow30_file = project_root / 'data' / 'universe' / 'dow30_companies.csv'
+    if dow30_file.exists():
+        dow30_df = pd.read_csv(dow30_file)
+        for _, row in dow30_df.iterrows():
+            # Use 'industry' column for Dow 30 as it seems to be the sector equivalent
+            sector_mapping[row['symbol']] = row['industry']
+    
+    return sector_mapping
+
+
 async def run_combined_analysis(universe='default'):
     """
-    Run analysis for both timeframes and create comparison.
+    Run analysis for both timeframes and create comparison with sector analysis.
     
     Args:
         universe: 'default', 'sp500', or 'custom'
@@ -223,6 +246,9 @@ async def run_combined_analysis(universe='default'):
     
     comparison_data = []
     
+    # Load sector mapping
+    sector_mapping = load_sector_mapping()
+    
     # Check if Symbol column exists
     if 'Symbol' not in intermediate_df.columns or 'Symbol' not in long_term_df.columns:
         logger.error("Symbol column not found in results")
@@ -264,8 +290,12 @@ async def run_combined_analysis(universe='default'):
             else:
                 consensus = 'MIXED'
             
+            # Get sector
+            sector = sector_mapping.get(symbol, 'Unknown')
+            
             comparison_data.append({
                 'Symbol': symbol,
+                'Sector': sector,
                 'Intermediate Action': int_row['Action'],
                 'Intermediate Comp Score': int_row['Comprehensive Score'],
                 'Intermediate Tech Score': int_row['Technical Score'],
@@ -297,8 +327,53 @@ async def run_combined_analysis(universe='default'):
     comparison_df.to_csv(comparison_file, index=False)
     logger.info(f"Comparison saved to: {comparison_file}")
     
+    # Create and save sector analysis
+    sector_analysis = comparison_df.groupby(['Sector', 'Consensus']).size().unstack(fill_value=0)
+    
+    # Save sector analysis to CSV
+    sector_file = data_dir / f"enhanced_advanced_momentum_sector_analysis_{timestamp}.csv"
+    sector_analysis.to_csv(sector_file)
+    logger.info(f"Sector analysis saved to: {sector_file}")
+    
+    # Also create a more detailed sector report
+    detailed_sector_data = []
+    for sector in comparison_df['Sector'].unique():
+        sector_df = comparison_df[comparison_df['Sector'] == sector]
+        
+        # Calculate sector metrics
+        avg_scores = {
+            'Sector': sector,
+            'Total Stocks': len(sector_df),
+            'Avg Comprehensive Score': sector_df['Average Comp Score'].apply(float).mean(),
+            'Avg Technical Score': sector_df['Average Tech Score'].apply(float).mean(),
+            'Avg Fundamental Score': sector_df['Average Fund Score'].apply(float).mean(),
+            'Avg Sentiment Score': sector_df['Average Sent Score'].apply(float).mean(),
+            'Strong Buy Count': len(sector_df[sector_df['Consensus'] == 'STRONG BUY']),
+            'Buy Count': len(sector_df[sector_df['Consensus'] == 'BUY']),
+            'Hold Count': len(sector_df[sector_df['Consensus'] == 'HOLD']),
+            'Mixed Count': len(sector_df[sector_df['Consensus'] == 'MIXED']),
+            'Sell Count': len(sector_df[sector_df['Consensus'] == 'SELL']),
+            'Strong Sell Count': len(sector_df[sector_df['Consensus'] == 'STRONG SELL']),
+            'Bullish %': len(sector_df[sector_df['Consensus'].isin(['STRONG BUY', 'BUY'])]) / len(sector_df) * 100,
+            'Bearish %': len(sector_df[sector_df['Consensus'].isin(['SELL', 'STRONG SELL'])]) / len(sector_df) * 100
+        }
+        detailed_sector_data.append(avg_scores)
+    
+    # Sort by average comprehensive score
+    detailed_sector_df = pd.DataFrame(detailed_sector_data)
+    detailed_sector_df = detailed_sector_df.sort_values('Avg Comprehensive Score', ascending=False)
+    
+    # Save detailed sector report
+    detailed_sector_file = data_dir / f"enhanced_advanced_momentum_sector_report_{timestamp}.csv"
+    detailed_sector_df.to_csv(detailed_sector_file, index=False)
+    logger.info(f"Detailed sector report saved to: {detailed_sector_file}")
+    
     # Display comprehensive summary
     logger.info("\n=== Enhanced Advanced Momentum Analysis Summary ===")
+    
+    # Display sector analysis
+    logger.info("\n**Sector Analysis:**")
+    logger.info(f"\n{sector_analysis}")
     
     # Count actions by timeframe
     for timeframe, df in [('Intermediate', intermediate_df), ('Long-term', long_term_df)]:
@@ -341,6 +416,12 @@ async def run_combined_analysis(universe='default'):
                           f"Tech: {row['Average Tech Score']}, "
                           f"Fund: {row['Average Fund Score']}, "
                           f"Sent: {row['Average Sent Score']})")
+        
+        # Display top sectors by average score
+        logger.info("\nTop 5 Sectors by Average Comprehensive Score:")
+        for _, row in detailed_sector_df.head(5).iterrows():
+            logger.info(f"{row['Sector']}: {row['Avg Comprehensive Score']:.3f} "
+                       f"(Bullish: {row['Bullish %']:.1f}%, Bearish: {row['Bearish %']:.1f}%)")
 
 
 def load_sp500_symbols():
@@ -361,7 +442,7 @@ async def main():
     """Main function"""
     import argparse
     
-    parser = argparse.ArgumentParser(description="Run enhanced advanced momentum strategy analysis")
+    parser = argparse.ArgumentParser(description="Run enhanced advanced momentum strategy analysis with sector reporting")
     parser.add_argument(
         "--universe",
         choices=['default', 'sp500', 'custom'],

@@ -35,4 +35,8 @@ build/
 *.sqlite3
 
 # Logs
+logs/
 *.log
+
+# Backup
+*.bk

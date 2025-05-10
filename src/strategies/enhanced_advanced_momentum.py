@@ -1,10 +1,11 @@
 # src/strategies/enhanced_advanced_momentum.py
 
 """
-Enhanced Advanced Momentum Strategy with Tiingo Data Integration
+Enhanced Advanced Momentum Strategy with Balanced Weight Adjustment
 
 This module implements a comprehensive momentum strategy with integrated
-action determination and advanced Tiingo data utilization.
+action determination, advanced Tiingo data utilization, and balanced weight
+adjustment based on data availability.
 """
 
 import numpy as np
@@ -21,8 +22,8 @@ from ..analysis.momentum_indicators import (
 
 class EnhancedAdvancedMomentumStrategy(BaseStrategy):
     """
-    Enhanced momentum strategy with integrated action determination
-    and advanced Tiingo data utilization.
+    Enhanced momentum strategy with integrated action determination,
+    advanced Tiingo data utilization, and balanced weight adjustment.
     """
     
     def __init__(self, config: dict, portfolio_manager=None, risk_manager=None, tiingo_fetcher=None):
@@ -46,10 +47,17 @@ class EnhancedAdvancedMomentumStrategy(BaseStrategy):
         self.rsi_min = config.get('rsi_min', 50)
         self.rsi_max = config.get('rsi_max', 80)
         
-        # Action determination weights
-        self.technical_weight = config.get('technical_weight', 0.5)
-        self.fundamental_weight = config.get('fundamental_weight', 0.3)
-        self.sentiment_weight = config.get('sentiment_weight', 0.2)
+        # Base weights (will be adjusted based on data availability)
+        self.base_weights = {
+            'technical': config.get('technical_weight', 0.5),
+            'fundamental': config.get('fundamental_weight', 0.3),
+            'sentiment': config.get('sentiment_weight', 0.2)
+        }
+        
+        # Confidence and adjustment parameters
+        self.min_confidence = config.get('min_confidence', 0.2)  # Lowered from 0.3
+        self.strictness_level = config.get('strictness_level', 'balanced')  # 'strict', 'balanced', 'relaxed'
+        self.use_adaptive_thresholds = config.get('use_adaptive_thresholds', True)
         
         # Cache for fundamental and news data
         self.fundamental_cache = {}
@@ -214,80 +222,75 @@ class EnhancedAdvancedMomentumStrategy(BaseStrategy):
         
         return indicators
     
-    def calculate_comprehensive_score(self, symbol: str, market_data: pd.DataFrame) -> Dict:
+    def adjust_weights_for_missing_data(self, data_availability: Dict[str, bool]) -> Dict[str, float]:
         """
-        Calculate comprehensive score using technical, fundamental, and sentiment data.
+        Dynamically adjust weights based on available data with balanced approach
         
         Args:
-            symbol: Stock symbol
-            market_data: Market data DataFrame
+            data_availability: Dictionary indicating which data types are available
             
         Returns:
-            Dictionary containing scores and analysis
+            Dictionary of adjusted weights
         """
-        # Calculate technical indicators
-        indicators = self.calculate_indicators(market_data)
-        technical_score = self._calculate_technical_score(indicators)
+        # Count available data types
+        available_count = sum(data_availability.values())
         
-        # Calculate fundamental score
-        fundamental_score = self._calculate_fundamental_score(symbol)
+        if available_count == 0:
+            raise ValueError("No data available for analysis")
         
-        # Calculate sentiment score
-        sentiment_score = self._calculate_sentiment_score(symbol)
+        # Start with base weights
+        adjusted_weights = self.base_weights.copy()
         
-        # Check if fundamental data is available
-        has_fundamentals = (symbol in self.fundamental_cache and 
-                           self.fundamental_cache[symbol].get('has_fundamentals', False))
+        # Handle missing data based on strictness level
+        if self.strictness_level == 'strict':
+            # Original strict approach
+            for data_type, is_available in data_availability.items():
+                if not is_available:
+                    # Redistribute weight more aggressively
+                    weight_to_redistribute = adjusted_weights[data_type]
+                    adjusted_weights[data_type] = 0
+                    
+                    # Redistribute to available types
+                    available_types = [t for t, avail in data_availability.items() if avail and t != data_type]
+                    if available_types:
+                        for target_type in available_types:
+                            adjusted_weights[target_type] += weight_to_redistribute / len(available_types)
         
-        # Adjust weights based on data availability
-        if has_fundamentals:
-            # Use configured weights
-            tech_weight = self.technical_weight
-            fund_weight = self.fundamental_weight
-            sent_weight = self.sentiment_weight
-        else:
-            # Redistribute fundamental weight to technical and sentiment
-            tech_weight = self.technical_weight + (self.fundamental_weight * 0.7)
-            fund_weight = 0
-            sent_weight = self.sentiment_weight + (self.fundamental_weight * 0.3)
-            
-            # Normalize weights
-            total_weight = tech_weight + fund_weight + sent_weight
-            tech_weight /= total_weight
-            sent_weight /= total_weight
+        elif self.strictness_level == 'relaxed':
+            # More lenient approach - keep some weight even for missing data
+            for data_type, is_available in data_availability.items():
+                if not is_available:
+                    # Reduce weight but don't eliminate it
+                    adjusted_weights[data_type] *= 0.3
         
-        # Weighted comprehensive score
-        comprehensive_score = (
-            technical_score * tech_weight +
-            fundamental_score * fund_weight +
-            sentiment_score * sent_weight
-        )
+        else:  # 'balanced' (default)
+            # Balanced approach - partial redistribution
+            for data_type, is_available in data_availability.items():
+                if not is_available:
+                    original_weight = adjusted_weights[data_type]
+                    # Keep 20% of original weight (as neutral score)
+                    adjusted_weights[data_type] = original_weight * 0.2
+                    
+                    # Redistribute 80% of the weight
+                    weight_to_redistribute = original_weight * 0.8
+                    
+                    # Define redistribution preferences
+                    redistribution_priority = {
+                        'technical': {'fundamental': 0.3, 'sentiment': 0.7},
+                        'fundamental': {'technical': 0.7, 'sentiment': 0.3},
+                        'sentiment': {'technical': 0.8, 'fundamental': 0.2}
+                    }
+                    
+                    for target_type, priority in redistribution_priority[data_type].items():
+                        if data_availability.get(target_type, False):
+                            adjusted_weights[target_type] += weight_to_redistribute * priority
         
-        # Determine action based on comprehensive analysis
-        action = self._determine_action(
-            comprehensive_score=comprehensive_score,
-            technical_score=technical_score,
-            indicators=indicators
-        )
+        # Normalize weights to sum to 1
+        total_weight = sum(adjusted_weights.values())
+        for data_type in adjusted_weights:
+            adjusted_weights[data_type] /= total_weight
         
-        # Check if buy criteria are met
-        buy_criteria_met = self._check_buy_criteria(
-            comprehensive_score=comprehensive_score,
-            technical_score=technical_score,
-            indicators=indicators
-        )
-        
-        return {
-            'symbol': symbol,
-            'comprehensive_score': comprehensive_score,
-            'technical_score': technical_score,
-            'fundamental_score': fundamental_score,
-            'sentiment_score': sentiment_score,
-            'action': action,
-            'buy_criteria_met': buy_criteria_met,
-            'indicators': indicators,
-            'timeframe': self.timeframe
-        }
+        return adjusted_weights
     
     def _calculate_technical_score(self, indicators: Dict[str, float]) -> float:
         """
@@ -413,53 +416,208 @@ class EnhancedAdvancedMomentumStrategy(BaseStrategy):
         # Blend with neutral based on confidence
         return normalized_sentiment * confidence + 0.5 * (1 - confidence)
     
-    def _determine_action(self, comprehensive_score: float, technical_score: float, 
-                         indicators: Dict[str, float]) -> str:
+    def _calculate_confidence(self, data_availability: Dict[str, bool], 
+                             technical_score: float, 
+                             indicators: Dict[str, float]) -> float:
         """
-        Determine trading action based on comprehensive analysis.
+        Calculate confidence level based on data availability and quality
         
         Args:
-            comprehensive_score: Overall weighted score
+            data_availability: Dictionary indicating which data types are available
             technical_score: Technical analysis score
             indicators: Technical indicators
             
         Returns:
-            Action: 'BUY', 'HOLD', or 'SELL'
+            Confidence level (0-1)
         """
-        # Strong buy threshold
-        if comprehensive_score >= 0.7 and technical_score >= 0.6:
-            return 'BUY'
+        # Base confidence from data availability
+        available_count = sum(data_availability.values())
+        base_confidence = available_count / 3.0
         
-        # Buy threshold
-        elif comprehensive_score >= 0.6 and technical_score >= 0.5:
-            # Additional checks for buy
-            if (indicators['close'] > indicators['ma_50'] and 
-                self.rsi_min <= indicators['rsi'] <= self.rsi_max and
-                indicators.get('volume_ratio', 1.0) > 1.0):
-                return 'BUY'
+        # Adjust for data quality
+        quality_multiplier = 1.0
         
-        # Sell conditions
-        elif comprehensive_score < 0.3 or technical_score < 0.3:
-            return 'SELL'
+        # Technical quality check
+        if data_availability['technical']:
+            # Check for strong technical signals
+            if technical_score > 0.7:
+                quality_multiplier *= 1.1
+            elif technical_score < 0.3:
+                quality_multiplier *= 0.9
         
-        # Specific sell triggers
-        elif (indicators['rsi'] > 80 or  # Extremely overbought
-              indicators['close'] < indicators['ma_50'] or  # Below key MA
-              indicators.get('pct_from_52w_high', 0) < -0.25):  # 25% below high
-            return 'SELL'
+        # Volume confirmation
+        volume_ratio = indicators.get('volume_ratio', 1.0)
+        if volume_ratio > 1.5:
+            quality_multiplier *= 1.05
+        elif volume_ratio < 0.8:
+            quality_multiplier *= 0.95
         
-        # Default to hold
-        return 'HOLD'
+        # Final confidence calculation
+        confidence = base_confidence * quality_multiplier
+        
+        # Apply strictness level adjustments
+        if self.strictness_level == 'strict':
+            confidence *= 0.9  # More conservative
+        elif self.strictness_level == 'relaxed':
+            confidence *= 1.1  # More lenient
+        
+        return min(1.0, max(0.0, confidence))
     
-    def _check_buy_criteria(self, comprehensive_score: float, technical_score: float,
-                           indicators: Dict[str, float]) -> bool:
+    def _determine_action(self, comprehensive_score: float, 
+                         technical_score: float, 
+                         indicators: Dict[str, float],
+                         confidence: float,
+                         data_availability: Dict[str, bool]) -> str:
         """
-        Check if buy criteria are met.
+        Determine trading action with balanced approach
         
         Args:
             comprehensive_score: Overall weighted score
             technical_score: Technical analysis score
             indicators: Technical indicators
+            confidence: Confidence level
+            data_availability: Dictionary indicating which data types are available
+            
+        Returns:
+            Action: 'BUY', 'HOLD', or 'SELL'
+        """
+        # Base thresholds
+        buy_threshold = 0.6
+        sell_threshold = 0.3
+        
+        # Adjust thresholds based on timeframe
+        if self.timeframe == 'long_term':
+            buy_threshold = 0.65
+            sell_threshold = 0.25
+        elif self.timeframe == 'short_term':
+            buy_threshold = 0.55
+            sell_threshold = 0.35
+        
+        # Adaptive threshold adjustments based on data availability
+        if self.use_adaptive_thresholds:
+            missing_count = 3 - sum(data_availability.values())
+            if missing_count > 0:
+                # More modest adjustment than before
+                threshold_adjustment = missing_count * 0.02  # Reduced from 0.05
+                buy_threshold += threshold_adjustment
+                sell_threshold -= threshold_adjustment
+        
+        # Primary action determination
+        if comprehensive_score >= buy_threshold:
+            # Additional buy confirmation checks
+            if technical_score >= 0.5 and indicators['close'] > indicators['ma_50']:
+                action = 'BUY'
+            else:
+                action = 'HOLD'
+        elif comprehensive_score < sell_threshold:
+            action = 'SELL'
+        else:
+            action = 'HOLD'
+        
+        # Confidence-based adjustments (less aggressive than before)
+        if confidence < self.min_confidence:
+            if action == 'BUY':
+                # Only downgrade to HOLD if confidence is very low
+                if confidence < self.min_confidence * 0.7:
+                    action = 'HOLD'
+            elif action == 'SELL':
+                # Be more cautious about selling with low confidence
+                if confidence < self.min_confidence * 0.8:
+                    action = 'HOLD'
+        
+        # Special case handling with less strict requirements
+        if action == 'BUY' and not data_availability['fundamental']:
+            # Reduced technical requirement when fundamentals missing
+            if technical_score < 0.6 or indicators['rsi'] > 75:  # Relaxed from 0.7 and 70
+                action = 'HOLD'
+        
+        return action
+    
+    def calculate_comprehensive_score(self, symbol: str, market_data: pd.DataFrame) -> Dict:
+        """
+        Calculate comprehensive score using technical, fundamental, and sentiment data.
+        
+        Args:
+            symbol: Stock symbol
+            market_data: Market data DataFrame
+            
+        Returns:
+            Dictionary containing scores and analysis
+        """
+        # Calculate technical indicators
+        indicators = self.calculate_indicators(market_data)
+        technical_score = self._calculate_technical_score(indicators)
+        
+        # Calculate fundamental score
+        fundamental_score = self._calculate_fundamental_score(symbol)
+        
+        # Calculate sentiment score
+        sentiment_score = self._calculate_sentiment_score(symbol)
+        
+        # Check data availability
+        data_availability = {
+            'technical': True,  # Always available
+            'fundamental': (symbol in self.fundamental_cache and 
+                          self.fundamental_cache[symbol].get('has_fundamentals', False)),
+            'sentiment': (symbol in self.news_cache and 
+                         self.news_cache[symbol].get('count', 0) > 0)
+        }
+        
+        # Get adjusted weights based on data availability
+        adjusted_weights = self.adjust_weights_for_missing_data(data_availability)
+        
+        # Weighted comprehensive score
+        comprehensive_score = (
+            technical_score * adjusted_weights['technical'] +
+            fundamental_score * adjusted_weights['fundamental'] +
+            sentiment_score * adjusted_weights['sentiment']
+        )
+        
+        # Calculate confidence
+        confidence = self._calculate_confidence(data_availability, technical_score, indicators)
+        
+        # Determine action
+        action = self._determine_action(
+            comprehensive_score=comprehensive_score,
+            technical_score=technical_score,
+            indicators=indicators,
+            confidence=confidence,
+            data_availability=data_availability
+        )
+        
+        # Check if buy criteria are met
+        buy_criteria_met = self._check_buy_criteria(
+            comprehensive_score=comprehensive_score,
+            technical_score=technical_score,
+            indicators=indicators,
+            confidence=confidence
+        )
+        
+        return {
+            'symbol': symbol,
+            'comprehensive_score': comprehensive_score,
+            'technical_score': technical_score,
+            'fundamental_score': fundamental_score,
+            'sentiment_score': sentiment_score,
+            'action': action,
+            'confidence': confidence,
+            'buy_criteria_met': buy_criteria_met,
+            'indicators': indicators,
+            'timeframe': self.timeframe,
+            'data_availability': data_availability,
+            'adjusted_weights': adjusted_weights
+        }
+    
+    def _check_buy_criteria(self, comprehensive_score: float, technical_score: float,
+                           indicators: Dict[str, float], confidence: float) -> bool:
+        """
+        Check if buy criteria are met with balanced approach.
+        
+        Args:
+            comprehensive_score: Overall weighted score
+            technical_score: Technical analysis score
+            indicators: Technical indicators
+            confidence: Confidence level
             
         Returns:
             True if buy criteria are met
@@ -468,8 +626,16 @@ class EnhancedAdvancedMomentumStrategy(BaseStrategy):
         if indicators.get('return_1m', 0) <= 0:
             return False
         
-        # Must have minimum scores
-        if comprehensive_score < 0.5 or technical_score < 0.4:
+        # Balanced score requirements
+        min_comp_score = 0.5
+        min_tech_score = 0.4
+        
+        # Only apply stricter requirements for very low confidence
+        if confidence < self.min_confidence * 0.5:
+            min_comp_score += 0.1
+            min_tech_score += 0.1
+        
+        if comprehensive_score < min_comp_score or technical_score < min_tech_score:
             return False
         
         # Must be above key moving average
@@ -478,6 +644,10 @@ class EnhancedAdvancedMomentumStrategy(BaseStrategy):
         
         # RSI must be in acceptable range
         if not (self.rsi_min <= indicators['rsi'] <= self.rsi_max):
+            return False
+        
+        # More lenient confidence requirement
+        if confidence < self.min_confidence * 0.5:  # Only reject if confidence is very low
             return False
         
         return True
@@ -505,7 +675,7 @@ class EnhancedAdvancedMomentumStrategy(BaseStrategy):
                 logger.error(f"Error analyzing {symbol}: {e}")
                 continue
         
-        # Sort by comprehensive score
+        # Sort by comprehensive score (not multiplied by confidence for better balance)
         analyses.sort(key=lambda x: x['comprehensive_score'], reverse=True)
         
         # Generate signals
@@ -522,7 +692,8 @@ class EnhancedAdvancedMomentumStrategy(BaseStrategy):
                     timestamp=current_time,
                     metadata={
                         'analysis': analysis,
-                        'rank': i + 1
+                        'rank': i + 1,
+                        'confidence': analysis['confidence']
                     }
                 )
                 signals.append(signal)
@@ -540,7 +711,8 @@ class EnhancedAdvancedMomentumStrategy(BaseStrategy):
                         timestamp=current_time,
                         metadata={
                             'analysis': analysis,
-                            'reason': 'sell_criteria_met'
+                            'reason': 'sell_criteria_met',
+                            'confidence': analysis['confidence']
                         }
                     )
                     signals.append(signal)
@@ -570,7 +742,7 @@ class EnhancedAdvancedMomentumStrategy(BaseStrategy):
                 logger.error(f"Error analyzing {symbol}: {e}")
                 continue
         
-        # Sort by comprehensive score
+        # Sort by comprehensive score (not multiplied by confidence)
         analyses.sort(key=lambda x: x['comprehensive_score'], reverse=True)
         
         return analyses
