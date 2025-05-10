@@ -1,0 +1,48 @@
+```yaml
+strategies:
+  enhanced_intermediate_momentum:
+    enabled: true
+    timeframe: "intermediate"
+    lookback_period: 252
+    top_n: 20
+    rebalance_frequency: "weekly"
+    
+    # Moving averages
+    ma_short: 20
+    ma_medium: 50
+    ma_long: 200
+    
+    # Entry criteria
+    min_price_performance: 0.10
+    volume_surge_threshold: 1.5
+    rsi_min: 50
+    rsi_max: 75
+    
+    # Score weighting
+    technical_weight: 0.5
+    fundamental_weight: 0.3
+    sentiment_weight: 0.2
+    
+  enhanced_long_term_momentum:
+    enabled: true
+    timeframe: "long_term"
+    lookback_period: 252
+    top_n: 10
+    rebalance_frequency: "monthly"
+    
+    # Moving averages
+    ma_short: 20
+    ma_medium: 50
+    ma_long: 200
+    
+    # Entry criteria
+    min_price_performance: 0.15
+    volume_surge_threshold: 1.3
+    rsi_min: 55
+    rsi_max: 70
+    
+    # Score weighting
+    technical_weight: 0.5
+    fundamental_weight: 0.3
+    sentiment_weight: 0.2
+```
