@@ -1,3 +1,5 @@
+# src/strategies/enhanced_advanced_momentum.py
+
 """
 Enhanced Advanced Momentum Strategy with Tiingo Data Integration
 
@@ -64,15 +66,17 @@ class EnhancedAdvancedMomentumStrategy(BaseStrategy):
             logger.warning("No Tiingo fetcher configured, skipping advanced data")
             return
             
-        # Fetch fundamental data
+        # Fetch fundamental data with progress
         try:
-            fundamentals = await self.tiingo_fetcher.fetch_fundamental_data(symbols)
+            logger.info("Fetching fundamental data...")
+            fundamentals = await self.tiingo_fetcher.fetch_fundamental_data(symbols, show_progress=True)
             self.fundamental_cache.update(fundamentals)
         except Exception as e:
             logger.error(f"Error fetching fundamental data: {e}")
         
         # Fetch recent news and sentiment
         try:
+            logger.info("Fetching news and sentiment data...")
             end_date = datetime.now()
             start_date = end_date - timedelta(days=30)
             news = await self.tiingo_fetcher.fetch_news(
@@ -117,53 +121,95 @@ class EnhancedAdvancedMomentumStrategy(BaseStrategy):
                     )
         
         return sentiment_scores
-   
-    def calculate_comprehensive_score(self, symbol: str, market_data: pd.DataFrame) -> Dict:
+    
+    def calculate_indicators(self, data: pd.DataFrame) -> Dict[str, float]:
         """
-        Calculate comprehensive score using technical, fundamental, and sentiment data.
-        """
-        # Calculate technical indicators
-        indicators = self.calculate_indicators(market_data)
-        technical_score = self._calculate_technical_score(indicators)
-    
-        # Calculate fundamental score
-        fundamental_score = self._calculate_fundamental_score(symbol)
-    
-        # Calculate sentiment score
-        sentiment_score = self._calculate_sentiment_score(symbol)
-    
-        # Check if fundamental data is available
-        has_fundamentals = (symbol in self.fundamental_cache and 
-                           'error' not in self.fundamental_cache[symbol])
-    
-        # Adjust weights based on data availability
-        if has_fundamentals:
-            # Use configured weights
-            tech_weight = self.technical_weight
-            fund_weight = self.fundamental_weight
-            sent_weight = self.sentiment_weight
-        else:
-            # Redistribute fundamental weight to technical and sentiment
-            tech_weight = self.technical_weight + (self.fundamental_weight * 0.7)
-            fund_weight = 0
-            sent_weight = self.sentiment_weight + (self.fundamental_weight * 0.3)
+        Calculate all momentum indicators for a single stock.
         
-            # Normalize weights
-            total_weight = tech_weight + fund_weight + sent_weight
-            tech_weight /= total_weight
-            sent_weight /= total_weight
+        Args:
+            data: DataFrame with price data
+            
+        Returns:
+            Dictionary of indicator values
+        """
+        indicators = {}
+        
+        # Handle duplicate columns
+        close = data['close']
+        if isinstance(close, pd.DataFrame):
+            close = close.iloc[:, 0]
+        
+        volume = data['volume']
+        if isinstance(volume, pd.DataFrame):
+            volume = volume.iloc[:, 0]
+        
+        # Moving Averages
+        indicators['ma_20'] = close.rolling(window=20).mean().iloc[-1]
+        indicators['ma_50'] = close.rolling(window=50).mean().iloc[-1]
+        indicators['ma_200'] = close.rolling(window=200).mean().iloc[-1]
+        
+        # Current price
+        indicators['close'] = close.iloc[-1]
+        
+        # RSI
+        rsi = calculate_rsi(close, period=14)
+        indicators['rsi'] = rsi.iloc[-1] if len(rsi) > 0 else 50
+        
+        # MACD
+        exp1 = close.ewm(span=12, adjust=False).mean()
+        exp2 = close.ewm(span=26, adjust=False).mean()
+        macd = exp1 - exp2
+        signal = macd.ewm(span=9, adjust=False).mean()
+        indicators['macd'] = macd.iloc[-1]
+        indicators['macd_signal'] = signal.iloc[-1]
+        indicators['macd_histogram'] = macd.iloc[-1] - signal.iloc[-1]
+        
+        # 52-week high
+        high_52w = close.rolling(window=252).max().iloc[-1]
+        indicators['pct_from_52w_high'] = (close.iloc[-1] - high_52w) / high_52w
+        
+        # Volume indicators
+        indicators['volume_ma_20'] = volume.rolling(window=20).mean().iloc[-1]
+        indicators['volume_ratio'] = volume.iloc[-1] / indicators['volume_ma_20'] if indicators['volume_ma_20'] > 0 else 1
+        
+        # Price performance
+        if len(close) >= 21:
+            indicators['return_1m'] = (close.iloc[-1] - close.iloc[-21]) / close.iloc[-21]
+        else:
+            indicators['return_1m'] = 0
+            
+        if len(close) >= 63:
+            indicators['return_3m'] = (close.iloc[-1] - close.iloc[-63]) / close.iloc[-63]
+        else:
+            indicators['return_3m'] = 0
+        
+        # ADX (simplified)
+        high = data['high']
+        low = data['low']
+        if isinstance(high, pd.DataFrame):
+            high = high.iloc[:, 0]
+        if isinstance(low, pd.DataFrame):
+            low = low.iloc[:, 0]
+        
+        plus_dm = high.diff()
+        minus_dm = low.diff()
+        plus_dm[plus_dm < 0] = 0
+        minus_dm[minus_dm > 0] = 0
+        
+        tr = pd.concat([high - low, 
+                       abs(high - close.shift(1)), 
+                       abs(low - close.shift(1))], axis=1).max(axis=1)
+        
+        atr = tr.rolling(window=14).mean()
+        plus_di = 100 * (plus_dm.rolling(window=14).mean() / atr)
+        minus_di = 100 * (abs(minus_dm).rolling(window=14).mean() / atr)
+        dx = 100 * (abs(plus_di - minus_di) / (plus_di + minus_di))
+        adx = dx.rolling(window=14).mean()
+        
+        indicators['adx'] = adx.iloc[-1] if len(adx) > 0 else 25
+        
+        return indicators
     
-        # Weighted comprehensive score
-        comprehensive_score = (
-            technical_score * tech_weight +
-            fundamental_score * fund_weight +
-            sentiment_score * sent_weight
-        )
-    
-    # ... rest of the method remains the same
-
-
- 
     def calculate_comprehensive_score(self, symbol: str, market_data: pd.DataFrame) -> Dict:
         """
         Calculate comprehensive score using technical, fundamental, and sentiment data.
@@ -185,11 +231,32 @@ class EnhancedAdvancedMomentumStrategy(BaseStrategy):
         # Calculate sentiment score
         sentiment_score = self._calculate_sentiment_score(symbol)
         
+        # Check if fundamental data is available
+        has_fundamentals = (symbol in self.fundamental_cache and 
+                           self.fundamental_cache[symbol].get('has_fundamentals', False))
+        
+        # Adjust weights based on data availability
+        if has_fundamentals:
+            # Use configured weights
+            tech_weight = self.technical_weight
+            fund_weight = self.fundamental_weight
+            sent_weight = self.sentiment_weight
+        else:
+            # Redistribute fundamental weight to technical and sentiment
+            tech_weight = self.technical_weight + (self.fundamental_weight * 0.7)
+            fund_weight = 0
+            sent_weight = self.sentiment_weight + (self.fundamental_weight * 0.3)
+            
+            # Normalize weights
+            total_weight = tech_weight + fund_weight + sent_weight
+            tech_weight /= total_weight
+            sent_weight /= total_weight
+        
         # Weighted comprehensive score
         comprehensive_score = (
-            technical_score * self.technical_weight +
-            fundamental_score * self.fundamental_weight +
-            sentiment_score * self.sentiment_weight
+            technical_score * tech_weight +
+            fundamental_score * fund_weight +
+            sentiment_score * sent_weight
         )
         
         # Determine action based on comprehensive analysis
@@ -267,28 +334,51 @@ class EnhancedAdvancedMomentumStrategy(BaseStrategy):
             score += 10
         
         return score / max_score
-   
+    
     def _calculate_fundamental_score(self, symbol: str) -> float:
         """
         Calculate fundamental score using Tiingo data.
-    
+        
         Args:
             symbol: Stock symbol
-        
+            
         Returns:
             Fundamental score (0-1)
         """
         if symbol not in self.fundamental_cache:
             return 0.5  # Neutral score if no data
-    
+        
         fundamentals = self.fundamental_cache[symbol]
-    
-        # Check if we have an error (e.g., DOW 30 limitation)
-        if 'error' in fundamentals:
+        
+        # Check if we have an error or no fundamentals
+        if 'error' in fundamentals or not fundamentals.get('has_fundamentals', False):
             return 0.5  # Return neutral score for unavailable data
-    
-    # ... rest of the method remains the same
-
+        
+        score = 0.5  # Start with neutral
+        
+        try:
+            # Analyze fundamental data if available
+            statements = fundamentals.get('statements', {})
+            daily_metrics = fundamentals.get('daily_metrics', {})
+            
+            # Simple scoring based on available metrics
+            # This is a placeholder - you would implement more sophisticated analysis
+            if statements:
+                # Add points for positive fundamentals
+                score += 0.1
+            
+            if daily_metrics:
+                # Add points for good daily metrics
+                score += 0.1
+            
+            # Ensure score stays within bounds
+            score = max(0.0, min(1.0, score))
+            
+        except Exception as e:
+            logger.debug(f"Error calculating fundamental score for {symbol}: {e}")
+            return 0.5
+        
+        return score
     
     def _calculate_sentiment_score(self, symbol: str) -> float:
         """
@@ -388,7 +478,7 @@ class EnhancedAdvancedMomentumStrategy(BaseStrategy):
         
         return True
     
-    async def generate_signals(self, market_data: Dict[str, pd.DataFrame]) -> List[Signal]:
+    def generate_signals(self, market_data: Dict[str, pd.DataFrame]) -> List[Signal]:
         """
         Generate trading signals with comprehensive analysis.
         
@@ -398,10 +488,6 @@ class EnhancedAdvancedMomentumStrategy(BaseStrategy):
         Returns:
             List of trading signals
         """
-        # Enhance with Tiingo data
-        symbols = list(market_data.keys())
-        await self.enhance_with_tiingo_data(symbols)
-        
         # Analyze all stocks
         analyses = []
         for symbol, data in market_data.items():
@@ -484,32 +570,32 @@ class EnhancedAdvancedMomentumStrategy(BaseStrategy):
         analyses.sort(key=lambda x: x['comprehensive_score'], reverse=True)
         
         return analyses
-
+    
     def calculate_momentum_scores(self, data: pd.DataFrame) -> pd.Series:
         """
         Calculate momentum scores for assets.
         Required implementation of abstract method from BaseStrategy.
-    
+        
         Args:
             data: DataFrame with price data
-        
+            
         Returns:
             Series with momentum scores
         """
         # This is called by the base class for single asset scoring
         # We'll use our comprehensive scoring approach
-    
+        
         # Handle duplicate columns
         close_data = data['close']
         if isinstance(close_data, pd.DataFrame):
             close_data = close_data.iloc[:, 0]
-    
+        
         if len(close_data) < self.lookback_period:
             return pd.Series([np.nan])
-    
+        
         # For single asset analysis, we'll return technical score
         # The full comprehensive score requires symbol information for fundamental/sentiment
         indicators = self.calculate_indicators(data)
         technical_score = self._calculate_technical_score(indicators)
-    
+        
         return pd.Series([technical_score])

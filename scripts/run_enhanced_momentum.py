@@ -187,19 +187,42 @@ async def run_combined_analysis(universe='default'):
     # Save results
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     
-    # Save individual results
-    intermediate_df = pd.DataFrame(intermediate_results)
-    intermediate_file = data_dir / f"enhanced_advanced_momentum_intermediate_{timestamp}.csv"
-    intermediate_df.to_csv(intermediate_file, index=False)
-    logger.info(f"Intermediate analysis saved to: {intermediate_file}")
+    # Check if we have results before creating dataframes
+    if not intermediate_results:
+        logger.warning("No intermediate results found")
+        intermediate_df = pd.DataFrame()
+    else:
+        intermediate_df = pd.DataFrame(intermediate_results)
     
-    long_term_df = pd.DataFrame(long_term_results)
-    long_term_file = data_dir / f"enhanced_advanced_momentum_long_term_{timestamp}.csv"
-    long_term_df.to_csv(long_term_file, index=False)
-    logger.info(f"Long-term analysis saved to: {long_term_file}")
+    if not long_term_results:
+        logger.warning("No long-term results found")
+        long_term_df = pd.DataFrame()
+    else:
+        long_term_df = pd.DataFrame(long_term_results)
     
-    # Create comprehensive comparison
+    # Save individual results if not empty
+    if not intermediate_df.empty:
+        intermediate_file = data_dir / f"enhanced_advanced_momentum_intermediate_{timestamp}.csv"
+        intermediate_df.to_csv(intermediate_file, index=False)
+        logger.info(f"Intermediate analysis saved to: {intermediate_file}")
+    
+    if not long_term_df.empty:
+        long_term_file = data_dir / f"enhanced_advanced_momentum_long_term_{timestamp}.csv"
+        long_term_df.to_csv(long_term_file, index=False)
+        logger.info(f"Long-term analysis saved to: {long_term_file}")
+    
+    # Create comprehensive comparison only if both dataframes have data
+    if intermediate_df.empty or long_term_df.empty:
+        logger.warning("Cannot create comparison - missing data for one or both timeframes")
+        return
+    
     comparison_data = []
+    
+    # Check if Symbol column exists
+    if 'Symbol' not in intermediate_df.columns or 'Symbol' not in long_term_df.columns:
+        logger.error("Symbol column not found in results")
+        return
+    
     symbols = set(intermediate_df['Symbol'].tolist() + long_term_df['Symbol'].tolist())
     
     for symbol in symbols:

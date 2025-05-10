@@ -1,3 +1,5 @@
+# src/data/enhanced_tiingo_fetcher.py
+
 """
 Enhanced Tiingo Data Fetcher Module
 
@@ -11,6 +13,7 @@ from typing import Dict, List, Optional, Union
 import aiohttp
 import pandas as pd
 from loguru import logger
+from tqdm.asyncio import tqdm
 
 
 class EnhancedTiingoDataFetcher:
@@ -41,6 +44,10 @@ class EnhancedTiingoDataFetcher:
         self.rate_limit_window = config.get('rate_limit_window', 3600)
         self.request_count = 0
         self.request_times = []
+        
+        # Batch settings
+        self.max_concurrent_requests = config.get('max_concurrent_requests', 10)
+        self.batch_size = config.get('batch_size', 50)
         
     async def _make_request(self, endpoint: str, params: Optional[Dict] = None) -> Dict:
         """
@@ -143,40 +150,110 @@ class EnhancedTiingoDataFetcher:
         
         return results
     
-    async def fetch_fundamental_data(self, symbols: List[str]) -> Dict[str, Dict]:
+    async def _fetch_fundamental_single(self, symbol: str) -> Dict:
         """
-        Fetch fundamental data for symbols.
+        Fetch fundamental data for a single symbol.
+        
+        Args:
+            symbol: Stock symbol
+            
+        Returns:
+            Fundamental data dictionary
+        """
+        try:
+            # Fetch company meta data
+            meta_endpoint = f"/tiingo/daily/{symbol}"
+            meta_data = await self._make_request(meta_endpoint)
+            
+            # Try to fetch fundamental statements (might fail for DOW 30)
+            statements = {}
+            daily_metrics = {}
+            
+            try:
+                statements_endpoint = f"/tiingo/fundamentals/{symbol}/statements"
+                statements = await self._make_request(statements_endpoint)
+            except Exception as e:
+                if "DOW 30" in str(e) or "404" in str(e):
+                    # Silently handle DOW 30 limitation
+                    pass
+                else:
+                    logger.debug(f"Error fetching statements for {symbol}: {e}")
+            
+            try:
+                metrics_endpoint = f"/tiingo/fundamentals/{symbol}/daily"
+                daily_metrics = await self._make_request(metrics_endpoint)
+            except Exception as e:
+                if "DOW 30" in str(e) or "404" in str(e):
+                    # Silently handle DOW 30 limitation
+                    pass
+                else:
+                    logger.debug(f"Error fetching daily metrics for {symbol}: {e}")
+            
+            return {
+                'meta': meta_data,
+                'statements': statements,
+                'daily_metrics': daily_metrics,
+                'has_fundamentals': bool(statements or daily_metrics)
+            }
+            
+        except Exception as e:
+            logger.debug(f"Error fetching fundamentals for {symbol}: {e}")
+            return {'error': str(e), 'has_fundamentals': False}
+    
+    async def fetch_fundamental_data(
+        self, 
+        symbols: List[str], 
+        show_progress: bool = True
+    ) -> Dict[str, Dict]:
+        """
+        Fetch fundamental data for symbols with batch processing.
         
         Args:
             symbols: List of symbols
+            show_progress: Show progress bar
             
         Returns:
             Dictionary of fundamental data by symbol
         """
         results = {}
         
-        for symbol in symbols:
-            try:
-                # Fetch company meta data
-                meta_endpoint = f"/tiingo/daily/{symbol}"
-                meta_data = await self._make_request(meta_endpoint)
-                
-                # Fetch fundamental statements
-                statements_endpoint = f"/tiingo/fundamentals/{symbol}/statements"
-                statements = await self._make_request(statements_endpoint)
-                
-                # Fetch daily fundamental metrics
-                metrics_endpoint = f"/tiingo/fundamentals/{symbol}/daily"
-                daily_metrics = await self._make_request(metrics_endpoint)
-                
-                results[symbol] = {
-                    'meta': meta_data,
-                    'statements': statements,
-                    'daily_metrics': daily_metrics
-                }
-                
-            except Exception as e:
-                logger.error(f"Error fetching fundamentals for {symbol}: {e}")
+        # Split into batches
+        batches = [symbols[i:i+self.batch_size] 
+                  for i in range(0, len(symbols), self.batch_size)]
+        
+        # Process batches with progress bar
+        if show_progress:
+            pbar = tqdm(total=len(symbols), desc="Fetching fundamentals", unit="symbols")
+        
+        for batch in batches:
+            # Create semaphore to limit concurrent requests
+            semaphore = asyncio.Semaphore(self.max_concurrent_requests)
+            
+            async def fetch_with_semaphore(symbol):
+                async with semaphore:
+                    return symbol, await self._fetch_fundamental_single(symbol)
+            
+            # Fetch batch concurrently
+            tasks = [fetch_with_semaphore(symbol) for symbol in batch]
+            batch_results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # Process results
+            for result in batch_results:
+                if isinstance(result, Exception):
+                    logger.debug(f"Error in batch processing: {result}")
+                else:
+                    symbol, data = result
+                    results[symbol] = data
+            
+            if show_progress:
+                pbar.update(len(batch))
+            
+            # Small delay between batches
+            if batch != batches[-1]:
+                await asyncio.sleep(0.5)
+        
+        if show_progress:
+            pbar.close()
         
         return results
     
@@ -188,7 +265,7 @@ class EnhancedTiingoDataFetcher:
         limit: int = 100
     ) -> List[Dict]:
         """
-        Fetch news articles.
+        Fetch news articles with improved error handling.
         
         Args:
             symbols: Optional list of symbols to filter by
@@ -236,7 +313,7 @@ class EnhancedTiingoDataFetcher:
             return processed_news
             
         except Exception as e:
-            logger.error(f"Error fetching news: {e}")
+            logger.warning(f"Error fetching news: {e}. Returning empty news list.")
             return []
     
     def _extract_sentiment(self, article: Dict) -> float:
@@ -268,129 +345,3 @@ class EnhancedTiingoDataFetcher:
             return (positive_count - negative_count) / (positive_count + negative_count)
         
         return 0.0  # Neutral if no sentiment indicators
-    
-    async def fetch_intraday_data(
-        self,
-        symbols: List[str],
-        start_date: Union[str, datetime],
-        end_date: Union[str, datetime],
-        frequency: str = '5min',
-        use_iex: bool = False
-    ) -> Dict[str, pd.DataFrame]:
-        """
-        Fetch intraday data for symbols.
-        
-        Args:
-            symbols: List of symbols
-            start_date: Start date
-            end_date: End date
-            frequency: Data frequency (1min, 5min, etc.)
-            use_iex: Use IEX data feed
-            
-        Returns:
-            Dictionary of DataFrames by symbol
-        """
-        results = {}
-        
-        for symbol in symbols:
-            try:
-                if use_iex or self.use_iex:
-                    endpoint = f"/iex/{symbol}/prices"
-                    params = {
-                        'startDate': start_date.isoformat() if isinstance(start_date, datetime) else start_date,
-                        'endDate': end_date.isoformat() if isinstance(end_date, datetime) else end_date,
-                        'resampleFreq': frequency
-                    }
-                else:
-                    endpoint = f"/tiingo/crypto/{symbol}/prices"
-                    params = {
-                        'startDate': start_date,
-                        'endDate': end_date,
-                        'resampleFreq': frequency
-                    }
-                
-                data = await self._make_request(endpoint, params)
-                df = pd.DataFrame(data)
-                
-                if not df.empty:
-                    df['date'] = pd.to_datetime(df['date'])
-                    df.set_index('date', inplace=True)
-                    results[symbol] = df
-                    
-            except Exception as e:
-                logger.error(f"Error fetching intraday data for {symbol}: {e}")
-        
-        return results
-    
-    async def fetch_real_time_quotes(self, symbols: List[str]) -> Dict[str, Dict]:
-        """
-        Fetch real-time quotes for symbols (requires IEX subscription).
-        
-        Args:
-            symbols: List of symbols
-            
-        Returns:
-            Dictionary of real-time quotes by symbol
-        """
-        results = {}
-        
-        for symbol in symbols:
-            try:
-                endpoint = f"/iex/{symbol}/quote"
-                quote = await self._make_request(endpoint)
-                
-                results[symbol] = {
-                    'last': quote.get('last'),
-                    'bid': quote.get('bidPrice'),
-                    'ask': quote.get('askPrice'),
-                    'volume': quote.get('volume'),
-                    'timestamp': quote.get('timestamp')
-                }
-                
-            except Exception as e:
-                logger.error(f"Error fetching real-time quote for {symbol}: {e}")
-        
-        return results
-
-    async def fetch_fundamental_data(self, symbols: List[str]) -> Dict[str, Dict]:
-        """
-        Fetch fundamental data for symbols.
-    
-        Args:
-            symbols: List of symbols
-        
-        Returns:
-            Dictionary of fundamental data by symbol
-        """
-        results = {}
-    
-        for symbol in symbols:
-            try:
-               # Fetch company meta data
-               meta_endpoint = f"/tiingo/daily/{symbol}"
-               meta_data = await self._make_request(meta_endpoint)
-            
-               # Fetch fundamental statements
-               statements_endpoint = f"/tiingo/fundamentals/{symbol}/statements"
-               statements = await self._make_request(statements_endpoint)
-            
-               # Fetch daily fundamental metrics
-               metrics_endpoint = f"/tiingo/fundamentals/{symbol}/daily"
-               daily_metrics = await self._make_request(metrics_endpoint)
-            
-               results[symbol] = {
-                   'meta': meta_data,
-                   'statements': statements,
-                   'daily_metrics': daily_metrics
-               }
-            
-            except Exception as e:
-               # Check if it's a DOW 30 limitation error
-               if "DOW 30" in str(e):
-                   logger.warning(f"Fundamental data not available for {symbol} (DOW 30 limitation)")
-                   results[symbol] = {'error': 'DOW_30_LIMITATION'}
-               else:
-                   logger.error(f"Error fetching fundamentals for {symbol}: {e}")
-                   results[symbol] = {'error': str(e)}
-    
-        return results
