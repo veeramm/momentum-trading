@@ -1,17 +1,19 @@
 # src/strategies/enhanced_advanced_momentum.py
 
 """
-Enhanced Advanced Momentum Strategy with Balanced Weight Adjustment
+Enhanced Advanced Momentum Strategy with YAML Configuration Support
 
-This module implements a comprehensive momentum strategy with integrated
-action determination, advanced Tiingo data utilization, and balanced weight
-adjustment based on data availability.
+This module implements a comprehensive momentum strategy that loads configuration
+from YAML files and includes integrated action determination, advanced Tiingo data
+utilization, and balanced weight adjustment based on data availability.
 """
 
 import numpy as np
 import pandas as pd
+import yaml
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timedelta
+from pathlib import Path
 from loguru import logger
 
 from ..core.base_strategy import BaseStrategy, Signal
@@ -22,47 +24,209 @@ from ..analysis.momentum_indicators import (
 
 class EnhancedAdvancedMomentumStrategy(BaseStrategy):
     """
-    Enhanced momentum strategy with integrated action determination,
-    advanced Tiingo data utilization, and balanced weight adjustment.
+    Enhanced momentum strategy with YAML configuration support, integrated action
+    determination, advanced Tiingo data utilization, and balanced weight adjustment.
     """
     
-    def __init__(self, config: dict, portfolio_manager=None, risk_manager=None, tiingo_fetcher=None):
-        super().__init__(config, portfolio_manager, risk_manager)
+    def __init__(self, config: dict = None, yaml_config_path: str = None, 
+                 portfolio_manager=None, risk_manager=None, tiingo_fetcher=None):
+        """
+        Initialize the strategy with either direct config or YAML file path.
+        
+        Args:
+            config: Direct configuration dictionary (optional)
+            yaml_config_path: Path to YAML configuration file (optional)
+            portfolio_manager: Portfolio manager instance
+            risk_manager: Risk manager instance
+            tiingo_fetcher: Tiingo data fetcher instance
+        """
+        # Load configuration from YAML if path provided
+        if yaml_config_path:
+            config = self._load_config_from_yaml(yaml_config_path)
+        elif config is None:
+            # Try to load default config
+            config = self._load_default_config()
+        
+        # Extract strategy-specific config if nested
+        if 'strategies' in config and 'enhanced_advanced_momentum' in config['strategies']:
+            strategy_config = config['strategies']['enhanced_advanced_momentum']
+        else:
+            strategy_config = config
+        
+        # Initialize base class with strategy config
+        super().__init__(strategy_config, portfolio_manager, risk_manager)
         
         # Tiingo data fetcher for advanced features
         self.tiingo_fetcher = tiingo_fetcher
         
-        # Strategy parameters
-        self.timeframe = config.get('timeframe', 'intermediate')
-        self.top_n = config.get('top_n', 20)
+        # Strategy parameters from config
+        self.timeframe = strategy_config.get('timeframe', 'intermediate')
+        self.top_n = strategy_config.get('top_n', 20)
         
         # Indicator periods
-        self.ma_short = config.get('ma_short', 20)
-        self.ma_medium = config.get('ma_medium', 50)
-        self.ma_long = config.get('ma_long', 200)
+        self.ma_short = strategy_config.get('ma_short', 20)
+        self.ma_medium = strategy_config.get('ma_medium', 50)
+        self.ma_long = strategy_config.get('ma_long', 200)
         
         # Entry/Exit criteria thresholds
-        self.min_price_performance = config.get('min_price_performance', 0.10)
-        self.volume_surge_threshold = config.get('volume_surge_threshold', 1.5)
-        self.rsi_min = config.get('rsi_min', 50)
-        self.rsi_max = config.get('rsi_max', 80)
+        self.min_price_performance = strategy_config.get('min_price_performance', 0.10)
+        self.volume_surge_threshold = strategy_config.get('volume_surge_threshold', 1.5)
+        self.rsi_min = strategy_config.get('rsi_min', 50)
+        self.rsi_max = strategy_config.get('rsi_max', 80)
         
         # Base weights (will be adjusted based on data availability)
         self.base_weights = {
-            'technical': config.get('technical_weight', 0.5),
-            'fundamental': config.get('fundamental_weight', 0.3),
-            'sentiment': config.get('sentiment_weight', 0.2)
+            'technical': strategy_config.get('technical_weight', 0.5),
+            'fundamental': strategy_config.get('fundamental_weight', 0.3),
+            'sentiment': strategy_config.get('sentiment_weight', 0.2)
         }
         
         # Confidence and adjustment parameters
-        self.min_confidence = config.get('min_confidence', 0.2)  # Lowered from 0.3
-        self.strictness_level = config.get('strictness_level', 'balanced')  # 'strict', 'balanced', 'relaxed'
-        self.use_adaptive_thresholds = config.get('use_adaptive_thresholds', True)
+        self.min_confidence = strategy_config.get('min_confidence', 0.2)
+        self.strictness_level = strategy_config.get('strictness_level', 'balanced')
+        self.use_adaptive_thresholds = strategy_config.get('use_adaptive_thresholds', True)
+        
+        # Data requirements (from config if available)
+        self.min_data_requirements = strategy_config.get('min_data_requirements', {})
         
         # Cache for fundamental and news data
         self.fundamental_cache = {}
         self.news_cache = {}
         
+        logger.info(f"Initialized EnhancedAdvancedMomentumStrategy with timeframe: {self.timeframe}")
+        logger.debug(f"Configuration loaded: {strategy_config}")
+    
+    def _load_config_from_yaml(self, yaml_path: str) -> dict:
+        """
+        Load configuration from YAML file.
+        
+        Args:
+            yaml_path: Path to YAML configuration file
+            
+        Returns:
+            Configuration dictionary
+        """
+        try:
+            with open(yaml_path, 'r') as file:
+                config = yaml.safe_load(file)
+            logger.info(f"Loaded configuration from {yaml_path}")
+            return config
+        except Exception as e:
+            logger.error(f"Error loading YAML configuration from {yaml_path}: {e}")
+            return {}
+    
+    def _load_default_config(self) -> dict:
+        """
+        Try to load default configuration from standard locations.
+        
+        Returns:
+            Configuration dictionary
+        """
+        # Try standard config locations
+        config_paths = [
+            Path(__file__).parent.parent.parent / 'config' / 'config.yaml',
+            Path(__file__).parent.parent.parent / 'config' / 'strategies' / 'enhanced_advanced_momentum.yaml',
+            Path('config/config.yaml'),
+            Path('config/strategies/enhanced_advanced_momentum.yaml')
+        ]
+        
+        for config_path in config_paths:
+            if config_path.exists():
+                logger.info(f"Found configuration file at {config_path}")
+                return self._load_config_from_yaml(str(config_path))
+        
+        logger.warning("No configuration file found, using default values")
+        return {}
+    
+    @classmethod
+    def from_yaml(cls, yaml_path: str, portfolio_manager=None, risk_manager=None, tiingo_fetcher=None):
+        """
+        Create strategy instance from YAML configuration file.
+        
+        Args:
+            yaml_path: Path to YAML configuration file
+            portfolio_manager: Portfolio manager instance
+            risk_manager: Risk manager instance
+            tiingo_fetcher: Tiingo data fetcher instance
+            
+        Returns:
+            Strategy instance
+        """
+        return cls(yaml_config_path=yaml_path, portfolio_manager=portfolio_manager,
+                  risk_manager=risk_manager, tiingo_fetcher=tiingo_fetcher)
+    
+    def update_config_from_yaml(self, yaml_path: str):
+        """
+        Update strategy configuration from YAML file.
+        
+        Args:
+            yaml_path: Path to YAML configuration file
+        """
+        config = self._load_config_from_yaml(yaml_path)
+        if 'strategies' in config and 'enhanced_advanced_momentum' in config['strategies']:
+            strategy_config = config['strategies']['enhanced_advanced_momentum']
+        else:
+            strategy_config = config
+        
+        # Update strategy parameters
+        self.timeframe = strategy_config.get('timeframe', self.timeframe)
+        self.top_n = strategy_config.get('top_n', self.top_n)
+        
+        # Update indicator periods
+        self.ma_short = strategy_config.get('ma_short', self.ma_short)
+        self.ma_medium = strategy_config.get('ma_medium', self.ma_medium)
+        self.ma_long = strategy_config.get('ma_long', self.ma_long)
+        
+        # Update entry/exit criteria
+        self.min_price_performance = strategy_config.get('min_price_performance', self.min_price_performance)
+        self.volume_surge_threshold = strategy_config.get('volume_surge_threshold', self.volume_surge_threshold)
+        self.rsi_min = strategy_config.get('rsi_min', self.rsi_min)
+        self.rsi_max = strategy_config.get('rsi_max', self.rsi_max)
+        
+        # Update weights
+        if 'technical_weight' in strategy_config:
+            self.base_weights['technical'] = strategy_config['technical_weight']
+        if 'fundamental_weight' in strategy_config:
+            self.base_weights['fundamental'] = strategy_config['fundamental_weight']
+        if 'sentiment_weight' in strategy_config:
+            self.base_weights['sentiment'] = strategy_config['sentiment_weight']
+        
+        # Update confidence parameters
+        self.min_confidence = strategy_config.get('min_confidence', self.min_confidence)
+        self.strictness_level = strategy_config.get('strictness_level', self.strictness_level)
+        self.use_adaptive_thresholds = strategy_config.get('use_adaptive_thresholds', self.use_adaptive_thresholds)
+        
+        logger.info(f"Updated strategy configuration from {yaml_path}")
+    
+    def get_current_config(self) -> dict:
+        """
+        Get current strategy configuration.
+        
+        Returns:
+            Dictionary of current configuration values
+        """
+        return {
+            'timeframe': self.timeframe,
+            'top_n': self.top_n,
+            'lookback_period': self.lookback_period,
+            'rebalance_frequency': self.rebalance_frequency,
+            'ma_short': self.ma_short,
+            'ma_medium': self.ma_medium,
+            'ma_long': self.ma_long,
+            'min_price_performance': self.min_price_performance,
+            'volume_surge_threshold': self.volume_surge_threshold,
+            'rsi_min': self.rsi_min,
+            'rsi_max': self.rsi_max,
+            'technical_weight': self.base_weights['technical'],
+            'fundamental_weight': self.base_weights['fundamental'],
+            'sentiment_weight': self.base_weights['sentiment'],
+            'min_confidence': self.min_confidence,
+            'strictness_level': self.strictness_level,
+            'use_adaptive_thresholds': self.use_adaptive_thresholds
+        }
+    
+    # ... (rest of the methods remain the same as in the original implementation)
+    
     async def enhance_with_tiingo_data(self, symbols: List[str]):
         """
         Fetch and cache advanced Tiingo data for symbols.
@@ -533,6 +697,50 @@ class EnhancedAdvancedMomentumStrategy(BaseStrategy):
         
         return action
     
+    def _check_buy_criteria(self, comprehensive_score: float, technical_score: float,
+                           indicators: Dict[str, float], confidence: float) -> bool:
+        """
+        Check if buy criteria are met with balanced approach.
+        
+        Args:
+            comprehensive_score: Overall weighted score
+            technical_score: Technical analysis score
+            indicators: Technical indicators
+            confidence: Confidence level
+            
+        Returns:
+            True if buy criteria are met
+        """
+        # Must have positive momentum
+        if indicators.get('return_1m', 0) <= 0:
+            return False
+        
+        # Balanced score requirements
+        min_comp_score = 0.5
+        min_tech_score = 0.4
+        
+        # Only apply stricter requirements for very low confidence
+        if confidence < self.min_confidence * 0.5:
+            min_comp_score += 0.1
+            min_tech_score += 0.1
+        
+        if comprehensive_score < min_comp_score or technical_score < min_tech_score:
+            return False
+        
+        # Must be above key moving average
+        if indicators['close'] < indicators['ma_50']:
+            return False
+        
+        # RSI must be in acceptable range
+        if not (self.rsi_min <= indicators['rsi'] <= self.rsi_max):
+            return False
+        
+        # More lenient confidence requirement
+        if confidence < self.min_confidence * 0.5:  # Only reject if confidence is very low
+            return False
+        
+        return True
+    
     def calculate_comprehensive_score(self, symbol: str, market_data: pd.DataFrame) -> Dict:
         """
         Calculate comprehensive score using technical, fundamental, and sentiment data.
@@ -607,50 +815,6 @@ class EnhancedAdvancedMomentumStrategy(BaseStrategy):
             'data_availability': data_availability,
             'adjusted_weights': adjusted_weights
         }
-    
-    def _check_buy_criteria(self, comprehensive_score: float, technical_score: float,
-                           indicators: Dict[str, float], confidence: float) -> bool:
-        """
-        Check if buy criteria are met with balanced approach.
-        
-        Args:
-            comprehensive_score: Overall weighted score
-            technical_score: Technical analysis score
-            indicators: Technical indicators
-            confidence: Confidence level
-            
-        Returns:
-            True if buy criteria are met
-        """
-        # Must have positive momentum
-        if indicators.get('return_1m', 0) <= 0:
-            return False
-        
-        # Balanced score requirements
-        min_comp_score = 0.5
-        min_tech_score = 0.4
-        
-        # Only apply stricter requirements for very low confidence
-        if confidence < self.min_confidence * 0.5:
-            min_comp_score += 0.1
-            min_tech_score += 0.1
-        
-        if comprehensive_score < min_comp_score or technical_score < min_tech_score:
-            return False
-        
-        # Must be above key moving average
-        if indicators['close'] < indicators['ma_50']:
-            return False
-        
-        # RSI must be in acceptable range
-        if not (self.rsi_min <= indicators['rsi'] <= self.rsi_max):
-            return False
-        
-        # More lenient confidence requirement
-        if confidence < self.min_confidence * 0.5:  # Only reject if confidence is very low
-            return False
-        
-        return True
     
     def generate_signals(self, market_data: Dict[str, pd.DataFrame]) -> List[Signal]:
         """
