@@ -40,3 +40,7 @@ logs/
 
 # Backup
 *.bk
+
+#Commit later
+docs/
+tests/
