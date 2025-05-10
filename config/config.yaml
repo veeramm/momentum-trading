@@ -15,7 +15,7 @@ data:
       rate_limit: 600  # requests per hour
       use_iex: false  # Use IEX feed for real-time data
       base_url: "https://api.tiingo.com"
-
+      
       # Batch processing settings
       batch_size: 50  # Number of symbols per batch
       max_concurrent_requests: 10  # Maximum concurrent API requests
@@ -25,28 +25,11 @@ data:
       timeout: 30  # Request timeout in seconds
       max_retries: 3  # Maximum retry attempts
       retry_delay: 2  # Base delay between retries (exponential backoff)
-
-
       
     yfinance:
       enabled: false
       rate_limit: 2000  # requests per hour
-      
-    alphavantage:
-      enabled: false
-      api_key: "${ALPHAVANTAGE_API_KEY}"
-      rate_limit: 5  # requests per minute
-      
-    polygon:
-      enabled: false
-      api_key: "${POLYGON_API_KEY}"
-      rate_limit: 100  # requests per minute
   
-  # Data storage configuration
-  storage:
-    type: "sqlite"  # sqlite, postgresql, mongodb
-    connection_string: "sqlite:///data/momentum_trading.db"
-    
   # Cache configuration
   cache:
     enabled: true
@@ -100,35 +83,70 @@ trading:
   rebalancing:
     frequency: "monthly"  # daily, weekly, monthly
     threshold: 0.05  # 5% deviation threshold
-    
+
 # Strategy configuration
 strategies:
-  # Classic momentum strategy
-  classic_momentum:
+  # Enhanced Advanced Momentum Strategy (Active)
+  enhanced_advanced_momentum:
     enabled: true
+    timeframe: "intermediate"  # short_term, intermediate, long_term
+    lookback_period: 252  # 12 months
+    top_n: 20  # Top 20 assets
+    rebalance_frequency: "weekly"
+    
+    # Indicator parameters
+    ma_short: 20
+    ma_medium: 50
+    ma_long: 200
+    
+    # Entry criteria
+    min_price_performance: 0.10  # 10% minimum return
+    volume_surge_threshold: 1.5  # 50% above average volume
+    rsi_min: 50
+    rsi_max: 80
+    
+    # Weight configuration
+    technical_weight: 0.5
+    fundamental_weight: 0.3
+    sentiment_weight: 0.2
+    
+    # Confidence and strictness settings
+    strictness_level: "balanced"  # strict, balanced, relaxed
+    min_confidence: 0.2
+    use_adaptive_thresholds: true
+    
+    # Data requirements
+    min_data_requirements:
+      short_term: ["technical"]
+      intermediate: ["technical", "any_other"]
+      long_term: ["technical", "fundamental", "sentiment"]
+  
+  # Classic momentum strategy (Implemented)
+  classic_momentum:
+    enabled: false
     lookback_period: 252  # 12 months
     holding_period: 21  # 1 month
     top_n: 10  # Top 10 assets
     rebalance_frequency: "monthly"
     filter_volatility: true
     min_volume: 1000000  # $1M daily volume
-    
-  # Dual momentum strategy
-  dual_momentum:
-    enabled: true
-    absolute_lookback: 252  # 12 months
-    relative_lookback: 126  # 6 months
-    safety_asset: "BIL"
-    risk_on_threshold: 0.0  # Positive returns required
-    
-  # Adaptive momentum strategy
-  adaptive_momentum:
-    enabled: true
-    min_lookback: 63  # 3 months
-    max_lookback: 252  # 12 months
-    regime_detection: true
-    volatility_scaling: true
-    correlation_filter: true
+  
+  # Dual momentum strategy (Not Implemented)
+  # dual_momentum:
+  #   enabled: false
+  #   absolute_lookback: 252  # 12 months
+  #   relative_lookback: 126  # 6 months
+  #   safety_asset: "BIL"
+  #   risk_on_threshold: 0.0  # Positive returns required
+  
+  # Adaptive momentum strategy (Not Implemented)
+  # adaptive_momentum:
+  #   enabled: false
+  #   min_lookback: 63  # 3 months
+  #   max_lookback: 252  # 12 months
+  #   regime_detection: true
+  #   volatility_scaling: true
+  #   correlation_filter: true
 
 # Execution configuration
 execution:
@@ -150,16 +168,6 @@ execution:
     default_type: "market"  # market, limit
     limit_offset_pct: 0.001  # 0.1% from mid price
     time_in_force: "day"  # day, gtc, ioc
-    
-  # Execution algorithms
-  algorithms:
-    vwap:
-      enabled: true
-      participation_rate: 0.05  # 5% of volume
-      
-    twap:
-      enabled: true
-      duration: 3600  # seconds
 
 # Monitoring configuration
 monitoring:
@@ -233,11 +241,6 @@ logging:
       path: "logs/momentum_trading.log"
       rotation: "1 day"
       retention: "30 days"
-    
-    syslog:
-      enabled: false
-      host: "localhost"
-      port: 514
 
 # Backtesting configuration
 backtesting:
